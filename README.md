@@ -22,13 +22,21 @@ Discover (read-only) → Plan → Human approval → Constrained read-only execu
 
 ## Install
 
-Requires Node.js 22+, pnpm, and GitHub SSH access to this private repository.
+TekAssure is a private GitHub Package. It requires Node.js 22+ and a GitHub classic personal access token with `read:packages` permission.
+
+Authenticate once:
 
 ```bash
-d="${TEKASSURE_HOME:-$HOME/.local/share/tekassure}"; export PNPM_HOME="$(dirname "$(dirname "$(dirname "$(pnpm root --global)")")")"; export PATH="$PNPM_HOME:$PATH"; if [ -d "$d/.git" ]; then git -C "$d" pull --ff-only; else git clone --depth 1 --branch main git@github.com:thaaaru/harness-0.1.git "$d"; fi && pnpm --dir "$d" install --frozen-lockfile && pnpm --dir "$d" link --global && tekassure install-browser
+npm login --scope=@thaaaru --auth-type=legacy --registry=https://npm.pkg.github.com
 ```
 
-Then use the global command:
+Then install and bootstrap the matching Chromium revision:
+
+```bash
+npm install --global @thaaaru/tekassure && tekassure install-browser
+```
+
+Use the global command:
 
 ```bash
 tekassure --help

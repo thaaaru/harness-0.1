@@ -1,7 +1,7 @@
 {
-  "name": "tekassure",
+  "name": "@thaaaru/tekassure",
   "version": "0.1.0",
-  "private": true,
+  "private": false,
   "description": "TekLab governed AI-assisted Playwright test automation.",
   "type": "module",
   "packageManager": "pnpm@10.34.5",
@@ -10,6 +10,10 @@
   },
   "bin": {
     "tekassure": "./dist/cli.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/thaaaru/harness-0.1.git"
   },
   "scripts": {
     "build": "tsc --project tsconfig.build.json",
@@ -26,6 +30,9 @@
     "dist",
     "README.md"
   ],
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
   "dependencies": {
     "@langchain/core": "^1.2.11",
     "@langchain/langgraph": "^1.4.15",
