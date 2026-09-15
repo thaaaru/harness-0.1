@@ -5,6 +5,8 @@ export const RunStatusSchema = z.enum([
   "planning",
   "awaiting_approval",
   "ready_to_execute",
+  "executing",
+  "passed",
   "rejected",
   "failed",
 ]);
@@ -80,6 +82,7 @@ export const HarnessRunInputSchema = z.object({
     allowInsecureHttp: false,
   }),
   artifactsDirectory: z.string().min(1).default("artifacts"),
+  headless: z.boolean().default(true),
 });
 export type HarnessRunInput = z.infer<typeof HarnessRunInputSchema>;
 
@@ -112,6 +115,27 @@ export const TestPlanSchema = z.object({
   warnings: z.array(z.string()),
 });
 export type TestPlan = z.infer<typeof TestPlanSchema>;
+
+export const NavigationCheckSchema = z.object({
+  url: z.string().url(),
+  expectedTitle: z.string(),
+  observedTitle: z.string().optional(),
+  expectedHeading: z.string().optional(),
+  observedHeading: z.string().optional(),
+  status: z.enum(["passed", "failed"]),
+  screenshotPath: z.string().optional(),
+  error: z.string().optional(),
+});
+export type NavigationCheck = z.infer<typeof NavigationCheckSchema>;
+
+export const ExecutionResultSchema = z.object({
+  runId: z.string().uuid(),
+  startedAt: z.string().datetime(),
+  completedAt: z.string().datetime(),
+  status: z.enum(["passed", "failed"]),
+  checks: z.array(NavigationCheckSchema).min(1),
+});
+export type ExecutionResult = z.infer<typeof ExecutionResultSchema>;
 
 export const ApprovalDecisionSchema = z.object({
   decision: z.enum(["approved", "rejected"]),

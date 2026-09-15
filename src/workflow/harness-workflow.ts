@@ -11,9 +11,14 @@ import {
   type AppSnapshot,
   type HarnessRunInput,
   type RunStatus,
+  type ExecutionResult,
   type TestPlan,
 } from "../domain.js";
 import type { AppDiscoverer } from "../discovery/contracts.js";
+import {
+  PlaywrightNavigationExecutor,
+  type NavigationExecutor,
+} from "../execution/public-navigation-executor.js";
 import { HeuristicTestPlanner, type TestPlanner } from "../planning/heuristic-planner.js";
 import { RunRepository } from "../storage/run-repository.js";
 
@@ -33,6 +38,7 @@ export type HarnessWorkflowDependencies = {
   repository: RunRepository;
   discoverer: AppDiscoverer;
   planner?: TestPlanner;
+  executor?: NavigationExecutor;
 };
 
 export type WorkflowResult = {
@@ -40,15 +46,22 @@ export type WorkflowResult = {
   status: RunStatus;
   plan?: TestPlan;
   snapshot?: AppSnapshot;
+  execution?: ExecutionResult;
+};
+
+export type ExecutionOptions = {
+  headless?: boolean;
 };
 
 export class HarnessWorkflow {
   private readonly planner: TestPlanner;
   private readonly checkpointer: SqliteSaver;
   private readonly graph: ReturnType<typeof createGraph>;
+  private readonly executor: NavigationExecutor;
 
   constructor(private readonly dependencies: HarnessWorkflowDependencies) {
     this.planner = dependencies.planner ?? new HeuristicTestPlanner();
+    this.executor = dependencies.executor ?? new PlaywrightNavigationExecutor();
     this.checkpointer = SqliteSaver.fromConnString(dependencies.databasePath);
     this.graph = createGraph(this);
   }
@@ -112,6 +125,73 @@ export class HarnessWorkflow {
     return this.resume(runId, approval);
   }
 
+  async execute(runId: string, options: ExecutionOptions = {}): Promise<WorkflowResult> {
+    const run = this.dependencies.repository.getRun(runId);
+    const retryingFailedExecution =
+      run.status === "failed" &&
+      run.approval?.decision === "approved" &&
+      this.dependencies.repository.getExecution(runId)?.status === "failed";
+    if (run.status !== "ready_to_execute" && !retryingFailedExecution) {
+      throw new Error(
+        `Run ${runId} is ${run.status}; only approved ready or previously failed read-only runs can be executed.`,
+      );
+    }
+
+    const snapshot = this.dependencies.repository.getSnapshot(runId);
+    if (!snapshot || snapshot.pages.length === 0) {
+      throw new Error(`Run ${runId} has no discovered pages to execute.`);
+    }
+
+    const headless = options.headless ?? run.input.headless;
+
+    const startedAt = new Date().toISOString();
+    this.dependencies.repository.updateStatus(runId, "executing", startedAt);
+    this.dependencies.repository.appendEvent(
+      runId,
+      "execution_started",
+      {
+        mode: "approved_read_only_navigation",
+        pageCount: snapshot.pages.length,
+        headless,
+      },
+      startedAt,
+    );
+
+    try {
+      const execution = await this.executor.execute({
+        runId,
+        snapshot,
+        policy: run.input.policy,
+        artifactsDirectory: run.input.artifactsDirectory,
+        headless,
+      });
+      const completedAt = new Date().toISOString();
+      this.dependencies.repository.saveExecution(runId, execution, completedAt);
+      this.dependencies.repository.updateStatus(runId, execution.status, completedAt);
+      this.dependencies.repository.appendEvent(
+        runId,
+        "execution_completed",
+        {
+          status: execution.status,
+          checkedPageCount: execution.checks.length,
+          failedPageCount: execution.checks.filter((check) => check.status === "failed").length,
+        },
+        completedAt,
+      );
+
+      return {
+        runId,
+        status: execution.status,
+        plan: this.dependencies.repository.getPlan(runId),
+        snapshot,
+        execution,
+      };
+    } catch (error) {
+      this.markFailed(runId, error);
+      throw error;
+    }
+  }
+
   getResult(runId: string): WorkflowResult {
     const run = this.dependencies.repository.getRun(runId);
     return {
@@ -119,6 +199,7 @@ export class HarnessWorkflow {
       status: run.status,
       plan: this.dependencies.repository.getPlan(runId),
       snapshot: this.dependencies.repository.getSnapshot(runId),
+      execution: this.dependencies.repository.getExecution(runId),
     };
   }
 
@@ -135,6 +216,7 @@ export class HarnessWorkflow {
       targetUrl: state.input.targetUrl,
       policy: state.input.policy,
       artifactsDirectory: state.input.artifactsDirectory,
+      headless: state.input.headless,
     });
 
     this.dependencies.repository.saveSnapshot(state.runId, snapshot, new Date().toISOString());
@@ -198,12 +280,9 @@ export class HarnessWorkflow {
     this.dependencies.repository.updateStatus(state.runId, status, now);
     this.dependencies.repository.appendEvent(
       state.runId,
-      status === "ready_to_execute" ? "execution_not_started" : "run_closed",
+      status === "ready_to_execute" ? "execution_available" : "run_closed",
       status === "ready_to_execute"
-        ? {
-            reason:
-              "The approved plan is persisted. The constrained execution adapter is the next milestone.",
-          }
+        ? { reason: "The approved plan is ready for constrained read-only navigation execution." }
         : { reason: "The test plan was rejected before execution." },
       now,
     );

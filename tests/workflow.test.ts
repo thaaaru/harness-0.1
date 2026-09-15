@@ -4,8 +4,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
-import type { AppSnapshot } from "../src/domain.js";
+import type { AppSnapshot, ExecutionResult } from "../src/domain.js";
 import type { AppDiscoverer, DiscoveryRequest } from "../src/discovery/contracts.js";
+import type {
+  NavigationExecutionInput,
+  NavigationExecutor,
+} from "../src/execution/public-navigation-executor.js";
 import { RunRepository } from "../src/storage/run-repository.js";
 import { HarnessWorkflow } from "../src/workflow/harness-workflow.js";
 
@@ -39,6 +43,29 @@ class FakeDiscoverer implements AppDiscoverer {
   }
 }
 
+class FakeNavigationExecutor implements NavigationExecutor {
+  calls: NavigationExecutionInput[] = [];
+
+  async execute(input: NavigationExecutionInput): Promise<ExecutionResult> {
+    this.calls.push(input);
+    const timestamp = new Date().toISOString();
+    return {
+      runId: input.runId,
+      startedAt: timestamp,
+      completedAt: timestamp,
+      status: "passed",
+      checks: input.snapshot.pages.map((page) => ({
+        url: page.url,
+        expectedTitle: page.title,
+        observedTitle: page.title,
+        expectedHeading: page.headings.at(0),
+        observedHeading: page.headings.at(0),
+        status: "passed",
+      })),
+    };
+  }
+}
+
 describe("HarnessWorkflow", () => {
   const resources: Array<{ workflow: HarnessWorkflow; repository: RunRepository; directory: string }> = [];
 
@@ -55,13 +82,15 @@ describe("HarnessWorkflow", () => {
     const databasePath = join(directory, "harness.sqlite");
     const repository = new RunRepository(databasePath);
     const discoverer = new FakeDiscoverer();
-    const workflow = new HarnessWorkflow({ databasePath, repository, discoverer });
+    const executor = new FakeNavigationExecutor();
+    const workflow = new HarnessWorkflow({ databasePath, repository, discoverer, executor });
     resources.push({ workflow, repository, directory });
 
     const pending = await workflow.start({
       targetUrl: "https://staging.example.test",
       goal: "Verify a user can sign in and create a draft order.",
       artifactsDirectory: join(directory, "artifacts"),
+      headless: false,
       policy: {
         allowedOrigins: [],
         maxPages: 5,
@@ -74,11 +103,19 @@ describe("HarnessWorkflow", () => {
     expect(pending.status).toBe("awaiting_approval");
     expect(pending.plan?.steps.some((step) => step.requiresApproval)).toBe(true);
     expect(discoverer.requests).toHaveLength(1);
+    expect(discoverer.requests[0]?.headless).toBe(false);
     expect(repository.getSnapshot(pending.runId)?.pages).toHaveLength(1);
 
     const approved = await workflow.approve(pending.runId, "test-operator", "The test scope is safe.");
     expect(approved.status).toBe("ready_to_execute");
     expect(repository.getRun(pending.runId).approval?.decision).toBe("approved");
     expect(repository.listEvents(pending.runId).map((event) => event.type)).toContain("plan_approved");
+
+    const executed = await workflow.execute(pending.runId);
+    expect(executed.status).toBe("passed");
+    expect(executor.calls).toHaveLength(1);
+    expect(executor.calls[0]?.headless).toBe(false);
+    expect(repository.getExecution(pending.runId)?.status).toBe("passed");
+    expect(repository.listEvents(pending.runId).map((event) => event.type)).toContain("execution_completed");
   });
 });

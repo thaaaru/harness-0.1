@@ -20,12 +20,14 @@ program
   .option("--allow-insecure-http", "permit HTTP for a local or isolated test environment", false)
   .option("--database <path>", "SQLite database path", "data/harness.sqlite")
   .option("--artifacts <path>", "artifact directory", "artifacts")
+  .option("--headless <boolean>", "run Chromium headlessly (true or false)", parseBoolean, true)
   .action(async (options) => {
     await withWorkflow(options.database, async (workflow) => {
       const result = await workflow.start({
         targetUrl: options.url,
         goal: options.goal,
         artifactsDirectory: resolve(options.artifacts),
+        headless: options.headless,
         policy: {
           allowedOrigins: options.allowOrigin,
           maxPages: options.maxPages,
@@ -38,7 +40,7 @@ program
 
 program
   .command("approve <runId>")
-  .description("Approve a persisted test plan. This does not yet execute browser actions.")
+  .description("Approve a persisted test plan. Run the constrained read-only checks separately with execute.")
   .option("--approver <name>", "approval actor", "local-operator")
   .option("--note <note>", "approval note")
   .option("--database <path>", "SQLite database path", "data/harness.sqlite")
@@ -61,8 +63,23 @@ program
   });
 
 program
+  .command("execute <runId>")
+  .description("Execute the approved plan using only constrained read-only GET navigation and assertions.")
+  .option("--database <path>", "SQLite database path", "data/harness.sqlite")
+  .option(
+    "--headless <boolean>",
+    "override the run's Chromium headless setting (true or false)",
+    parseBoolean,
+  )
+  .action(async (runId, options) => {
+    await withWorkflow(options.database, async (workflow) => {
+      printResult(await workflow.execute(runId, { headless: options.headless }));
+    });
+  });
+
+program
   .command("status <runId>")
-  .description("Show a run, its app snapshot, and its approved or pending test plan.")
+  .description("Show a run, its app snapshot, test plan, and any execution result.")
   .option("--database <path>", "SQLite database path", "data/harness.sqlite")
   .action(async (runId, options) => {
     await withWorkflow(options.database, async (workflow) => {
@@ -98,6 +115,17 @@ function parsePositiveInteger(value: string): number {
     throw new Error("Expected a positive integer.");
   }
   return parsed;
+}
+
+function parseBoolean(value: string): boolean {
+  const normalized = value.toLowerCase();
+  if (normalized === "true") {
+    return true;
+  }
+  if (normalized === "false") {
+    return false;
+  }
+  throw new Error("Expected true or false.");
 }
 
 function printResult(result: WorkflowResult): void {

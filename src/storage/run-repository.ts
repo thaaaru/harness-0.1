@@ -5,12 +5,14 @@ import Database from "better-sqlite3";
 import {
   ApprovalDecisionSchema,
   AppSnapshotSchema,
+  ExecutionResultSchema,
   HarnessRunInputSchema,
   RunRecordSchema,
   RunStatusSchema,
   TestPlanSchema,
   type ApprovalDecision,
   type AppSnapshot,
+  type ExecutionResult,
   type HarnessRunInput,
   type RunRecord,
   type RunStatus,
@@ -119,6 +121,23 @@ export class RunRepository {
     return row ? TestPlanSchema.parse(JSON.parse(row.plan_json)) : undefined;
   }
 
+  saveExecution(runId: string, execution: ExecutionResult, savedAt: string): void {
+    const parsed = ExecutionResultSchema.parse(execution);
+    this.db
+      .prepare(
+        `INSERT INTO executions (run_id, execution_json, saved_at)
+         VALUES (?, ?, ?)
+         ON CONFLICT(run_id) DO UPDATE SET execution_json = excluded.execution_json, saved_at = excluded.saved_at`,
+      )
+      .run(runId, JSON.stringify(parsed), savedAt);
+  }
+
+  getExecution(runId: string): ExecutionResult | undefined {
+    const row = this.db.prepare("SELECT execution_json FROM executions WHERE run_id = ?").get(runId) as
+      { execution_json: string } | undefined;
+    return row ? ExecutionResultSchema.parse(JSON.parse(row.execution_json)) : undefined;
+  }
+
   saveApproval(runId: string, approval: ApprovalDecision, savedAt: string): void {
     const parsed = ApprovalDecisionSchema.parse(approval);
     const result = this.db
@@ -169,6 +188,13 @@ export class RunRepository {
       CREATE TABLE IF NOT EXISTS plans (
         run_id TEXT PRIMARY KEY REFERENCES runs(id) ON DELETE CASCADE,
         plan_json TEXT NOT NULL,
+        saved_at TEXT NOT NULL
+      );
+
+
+      CREATE TABLE IF NOT EXISTS executions (
+        run_id TEXT PRIMARY KEY REFERENCES runs(id) ON DELETE CASCADE,
+        execution_json TEXT NOT NULL,
         saved_at TEXT NOT NULL
       );
 
