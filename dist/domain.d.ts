@@ -130,7 +130,7 @@ export declare const TargetPolicySchema: z.ZodObject<{
 export type TargetPolicy = z.infer<typeof TargetPolicySchema>;
 export declare const HarnessRunInputSchema: z.ZodObject<{
     targetUrl: z.ZodString;
-    goal: z.ZodString;
+    goal: z.ZodDefault<z.ZodString>;
     policy: z.ZodDefault<z.ZodObject<{
         allowedOrigins: z.ZodDefault<z.ZodArray<z.ZodString>>;
         maxPages: z.ZodDefault<z.ZodNumber>;
@@ -316,7 +316,7 @@ export declare const RunRecordSchema: z.ZodObject<{
     }>;
     input: z.ZodObject<{
         targetUrl: z.ZodString;
-        goal: z.ZodString;
+        goal: z.ZodDefault<z.ZodString>;
         policy: z.ZodDefault<z.ZodObject<{
             allowedOrigins: z.ZodDefault<z.ZodArray<z.ZodString>>;
             maxPages: z.ZodDefault<z.ZodNumber>;

@@ -4,6 +4,7 @@ import { spawn } from "node:child_process";
 import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import { Command } from "commander";
+import { WEB_APP_BASELINE_PRESET } from "./goal-presets.js";
 import { PlaywrightAppDiscoverer } from "./discovery/playwright-app-discoverer.js";
 import { RunRepository } from "./storage/run-repository.js";
 import { HarnessWorkflow } from "./workflow/harness-workflow.js";
@@ -13,7 +14,7 @@ program
     .command("discover")
     .description("Discover an application and generate a reviewable test plan without executing it.")
     .requiredOption("--url <url>", "application URL")
-    .requiredOption("--goal <goal>", "test objective or built-in preset: web-app-baseline")
+    .option("--goal <goal>", "test objective", WEB_APP_BASELINE_PRESET)
     .option("--allow-origin <origin...>", "additional permitted origins", [])
     .option("--max-pages <count>", "maximum routes to inspect", parsePositiveInteger, 10)
     .option("--allow-insecure-http", "permit HTTP for a local or isolated test environment", false)

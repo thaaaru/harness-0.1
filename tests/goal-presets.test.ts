@@ -7,7 +7,7 @@ import {
   isWebAppBaselineGoal,
   resolveGoal,
 } from "../src/goal-presets.js";
-import type { AppSnapshot } from "../src/domain.js";
+import { HarnessRunInputSchema, type AppSnapshot } from "../src/domain.js";
 import { HeuristicTestPlanner } from "../src/planning/heuristic-planner.js";
 
 const snapshot: AppSnapshot = {
@@ -37,6 +37,12 @@ describe("web-app-baseline goal preset", () => {
       text: WEB_APP_BASELINE_GOAL,
     });
     expect(resolveGoal("Verify the marketing homepage.")).toEqual({ text: "Verify the marketing homepage." });
+  });
+
+  it("uses the baseline preset when a workflow input omits a goal", () => {
+    expect(HarnessRunInputSchema.parse({ targetUrl: "https://example.test/" }).goal).toBe(
+      WEB_APP_BASELINE_PRESET,
+    );
   });
 
   it("adds read-only baseline and future-scope review steps", async () => {

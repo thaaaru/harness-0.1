@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { WEB_APP_BASELINE_PRESET } from "./goal-presets.js";
 export const RunStatusSchema = z.enum([
     "discovering",
     "planning",
@@ -59,7 +60,7 @@ export const TargetPolicySchema = z.object({
 });
 export const HarnessRunInputSchema = z.object({
     targetUrl: z.string().url(),
-    goal: z.string().trim().min(5).max(2_000),
+    goal: z.string().trim().min(5).max(2_000).default(WEB_APP_BASELINE_PRESET),
     policy: TargetPolicySchema.default({
         allowedOrigins: [],
         maxPages: 10,
