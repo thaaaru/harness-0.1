@@ -3,6 +3,8 @@ import { randomUUID } from "node:crypto";
 import { Annotation, Command, END, START, StateGraph, interrupt } from "@langchain/langgraph";
 import { SqliteSaver } from "@langchain/langgraph-checkpoint-sqlite";
 
+import { resolveGoal } from "../goal-presets.js";
+
 import {
   ApprovalDecisionSchema,
   HarnessRunInputSchema,
@@ -67,7 +69,8 @@ export class HarnessWorkflow {
   }
 
   async start(rawInput: unknown): Promise<WorkflowResult> {
-    const input = HarnessRunInputSchema.parse(rawInput);
+    const parsedInput = HarnessRunInputSchema.parse(rawInput);
+    const input = { ...parsedInput, goal: resolveGoal(parsedInput.goal).text };
     const runId = randomUUID();
     const now = new Date().toISOString();
 

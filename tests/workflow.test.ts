@@ -12,6 +12,7 @@ import type {
 } from "../src/execution/public-navigation-executor.js";
 import { RunRepository } from "../src/storage/run-repository.js";
 import { HarnessWorkflow } from "../src/workflow/harness-workflow.js";
+import { WEB_APP_BASELINE_GOAL, WEB_APP_BASELINE_PRESET } from "../src/goal-presets.js";
 
 class FakeDiscoverer implements AppDiscoverer {
   requests: DiscoveryRequest[] = [];
@@ -88,7 +89,7 @@ describe("HarnessWorkflow", () => {
 
     const pending = await workflow.start({
       targetUrl: "https://staging.example.test",
-      goal: "Verify a user can sign in and create a draft order.",
+      goal: WEB_APP_BASELINE_PRESET,
       artifactsDirectory: join(directory, "artifacts"),
       headless: false,
       policy: {
@@ -101,6 +102,8 @@ describe("HarnessWorkflow", () => {
     });
 
     expect(pending.status).toBe("awaiting_approval");
+    expect(repository.getRun(pending.runId).goal).toBe(WEB_APP_BASELINE_GOAL);
+    expect(pending.plan?.steps.some((step) => step.id === "verify-public-route-baseline")).toBe(true);
     expect(pending.plan?.steps.some((step) => step.requiresApproval)).toBe(true);
     expect(discoverer.requests).toHaveLength(1);
     expect(discoverer.requests[0]?.headless).toBe(false);

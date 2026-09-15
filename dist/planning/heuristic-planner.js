@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { isWebAppBaselineGoal } from "../goal-presets.js";
 /**
  * A conservative baseline planner. It creates a reviewable plan from structured
  * discovery evidence and deliberately leaves unknown state-changing actions for
@@ -45,6 +46,43 @@ export class HeuristicTestPlanner {
                 expectedResult: "The initial application page is reachable and renders its expected primary content.",
             },
         ];
+        if (isWebAppBaselineGoal(goal)) {
+            steps.push({
+                id: "verify-public-route-baseline",
+                title: "Verify public route reachability and content baseline",
+                rationale: "Use only safe direct navigation to re-check the routes, titles, and primary headings captured during discovery.",
+                risk: "read_only",
+                requiresApproval: false,
+                actions: [
+                    {
+                        kind: "navigate",
+                        description: `Navigate directly to each of the ${snapshot.pages.length} discovered same-origin route(s).`,
+                    },
+                    {
+                        kind: "assert",
+                        description: "Assert each route's expected title and first captured heading, then retain screenshot evidence.",
+                    },
+                ],
+                expectedResult: "Every approved safe route is reachable and renders its expected title and primary content heading.",
+            }, {
+                id: "review-future-web-app-scope",
+                title: "Review interaction and quality candidates for separate approval",
+                rationale: "Discovery identifies controls and links without interacting with them; forms, authentication, accessibility, responsiveness, performance, and security require dedicated scope and evidence.",
+                risk: "read_only",
+                requiresApproval: false,
+                actions: [
+                    {
+                        kind: "inspect",
+                        description: "Review discovered links and controls without clicking, filling, submitting, authenticating, or uploading.",
+                    },
+                    {
+                        kind: "inspect",
+                        description: "Record separately proposed checks for interactive journeys and quality areas; do not treat discovery metadata as completed accessibility, performance, or security testing.",
+                    },
+                ],
+                expectedResult: "The review distinguishes completed public-route evidence from interaction and quality scopes that need separate approval.",
+            });
+        }
         if (loginPage) {
             steps.push({
                 id: "authenticate-test-user",

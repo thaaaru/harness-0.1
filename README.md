@@ -66,9 +66,13 @@ tekassure --help
 pnpm install
 pnpm tekassure discover \
   --url https://staging.example.test \
-  --goal "Verify a standard user can sign in and create a draft order" \
+  --goal web-app-baseline \
   --headless false
 ````
+
+### Built-in `web-app-baseline` goal
+
+Use `--goal web-app-baseline` for a broad, governed starting point. It covers safe public-route reachability, titles, primary headings, and discovery-based navigation/form/authentication boundary review. It proposes interactive journeys, authentication, submissions, accessibility, responsiveness, performance, and security as **separate approval scopes**; it does not execute those actions or claim those checks have run.
 
 The command prints a `runId` and a pending plan. Inspect it before choosing either outcome:
 

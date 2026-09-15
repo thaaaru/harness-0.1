@@ -13,7 +13,7 @@ program
     .command("discover")
     .description("Discover an application and generate a reviewable test plan without executing it.")
     .requiredOption("--url <url>", "application URL")
-    .requiredOption("--goal <goal>", "test objective")
+    .requiredOption("--goal <goal>", "test objective or built-in preset: web-app-baseline")
     .option("--allow-origin <origin...>", "additional permitted origins", [])
     .option("--max-pages <count>", "maximum routes to inspect", parsePositiveInteger, 10)
     .option("--allow-insecure-http", "permit HTTP for a local or isolated test environment", false)

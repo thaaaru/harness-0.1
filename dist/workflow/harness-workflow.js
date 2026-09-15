@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { Annotation, Command, END, START, StateGraph, interrupt } from "@langchain/langgraph";
 import { SqliteSaver } from "@langchain/langgraph-checkpoint-sqlite";
+import { resolveGoal } from "../goal-presets.js";
 import { ApprovalDecisionSchema, HarnessRunInputSchema, } from "../domain.js";
 import { PlaywrightNavigationExecutor, } from "../execution/public-navigation-executor.js";
 import { HeuristicTestPlanner } from "../planning/heuristic-planner.js";
@@ -26,7 +27,8 @@ export class HarnessWorkflow {
         this.graph = createGraph(this);
     }
     async start(rawInput) {
-        const input = HarnessRunInputSchema.parse(rawInput);
+        const parsedInput = HarnessRunInputSchema.parse(rawInput);
+        const input = { ...parsedInput, goal: resolveGoal(parsedInput.goal).text };
         const runId = randomUUID();
         const now = new Date().toISOString();
         this.dependencies.repository.createRun({ id: runId, input, status: "discovering", createdAt: now });
