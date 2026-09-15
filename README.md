@@ -1,6 +1,6 @@
-# harness-0.1
+# TekAssure
 
-A governed AI-assisted test automation harness for Playwright.
+TekLab’s governed AI-assisted Playwright test automation CLI.
 
 ## Current milestone
 
@@ -20,12 +20,25 @@ Discover (read-only) → Plan → Human approval → Constrained read-only execu
 - Secrets are referenced by name only and must never enter model context.
 - Raw screenshots and future traces stay in artifacts; the app map contains bounded, redacted metadata.
 
-## Quick start
+## Install
+
+Requires Node.js 22+, pnpm, and GitHub SSH access to this private repository.
+
+```bash
+d="${TEKASSURE_HOME:-$HOME/.local/share/tekassure}"; export PNPM_HOME="$(dirname "$(dirname "$(dirname "$(pnpm root --global)")")")"; export PATH="$PNPM_HOME:$PATH"; if [ -d "$d/.git" ]; then git -C "$d" pull --ff-only; else git clone --depth 1 --branch main git@github.com:thaaaru/harness-0.1.git "$d"; fi && pnpm --dir "$d" install --frozen-lockfile && pnpm --dir "$d" link --global && tekassure install-browser
+```
+
+Then use the global command:
+
+```bash
+tekassure --help
+```
+
+## Local development
 
 ```bash
 pnpm install
-pnpm exec playwright install chromium
-pnpm harness discover \
+pnpm tekassure discover \
   --url https://staging.example.test \
   --goal "Verify a standard user can sign in and create a draft order" \
   --headless false
@@ -34,13 +47,13 @@ pnpm harness discover \
 The command prints a `runId` and a pending plan. Inspect it before choosing either outcome:
 
 ```bash
-pnpm harness status <run-id>
-pnpm harness approve <run-id> --approver "Tharaka" --note "Scope reviewed"
-pnpm harness execute <run-id>
-pnpm harness reject <run-id> --approver "Tharaka" --note "Adjust the proposed flow"
+tekassure status <run-id>
+tekassure approve <run-id> --approver "Tharaka" --note "Scope reviewed"
+tekassure execute <run-id>
+tekassure reject <run-id> --approver "Tharaka" --note "Adjust the proposed flow"
 ```
 
-`--headless` defaults to `true` during discovery and is persisted with the run. Pass `--headless false` to discovery to watch both discovery and its later execution; execution may override it with the same flag.
+`--headless` defaults to `true` during discovery and is persisted with the run. Pass `--headless false` to watch discovery and its later execution; execution may override it with the same flag.
 
 All run state, execution results, and LangGraph checkpoints live in `data/harness.sqlite`; screenshots are stored under `artifacts/<run-id>/`.
 

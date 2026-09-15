@@ -1,23 +1,31 @@
 {
-  "name": "harness-0.1",
+  "name": "tekassure",
   "version": "0.1.0",
   "private": true,
-  "description": "Governed AI-assisted Playwright test automation harness.",
+  "description": "TekLab governed AI-assisted Playwright test automation.",
   "type": "module",
   "packageManager": "pnpm@10.34.5",
   "engines": {
     "node": ">=22"
   },
+  "bin": {
+    "tekassure": "./dist/cli.js"
+  },
   "scripts": {
-    "build": "tsc --project tsconfig.json",
+    "build": "tsc --project tsconfig.build.json",
     "typecheck": "tsc --project tsconfig.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
+    "tekassure": "tsx src/cli.ts",
     "harness": "tsx src/cli.ts"
   },
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "dependencies": {
     "@langchain/core": "^1.2.11",
     "@langchain/langgraph": "^1.4.15",

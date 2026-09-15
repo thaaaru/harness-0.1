@@ -1,6 +1,10 @@
+#!/usr/bin/env node
+
 import "dotenv/config";
 
-import { resolve } from "node:path";
+import { spawn } from "node:child_process";
+import { createRequire } from "node:module";
+import { dirname, resolve } from "node:path";
 import { Command } from "commander";
 
 import { PlaywrightAppDiscoverer } from "./discovery/playwright-app-discoverer.js";
@@ -8,7 +12,7 @@ import { RunRepository } from "./storage/run-repository.js";
 import { HarnessWorkflow, type WorkflowResult } from "./workflow/harness-workflow.js";
 
 const program = new Command();
-program.name("harness").description("Governed AI-assisted Playwright test automation harness.");
+program.name("tekassure").description("TekLab governed AI-assisted Playwright test automation.");
 
 program
   .command("discover")
@@ -78,6 +82,13 @@ program
   });
 
 program
+  .command("install-browser")
+  .description("Install the matching Chromium browser used by TekAssure.")
+  .action(async () => {
+    await installChromium();
+  });
+
+program
   .command("status <runId>")
   .description("Show a run, its app snapshot, test plan, and any execution result.")
   .option("--database <path>", "SQLite database path", "data/harness.sqlite")
@@ -126,6 +137,26 @@ function parseBoolean(value: string): boolean {
     return false;
   }
   throw new Error("Expected true or false.");
+}
+
+async function installChromium(): Promise<void> {
+  const require = createRequire(import.meta.url);
+  const playwrightPackagePath = require.resolve("playwright/package.json");
+  const playwrightCliPath = resolve(dirname(playwrightPackagePath), "cli.js");
+  const processHandle = spawn(process.execPath, [playwrightCliPath, "install", "chromium"], {
+    stdio: "inherit",
+  });
+
+  await new Promise<void>((resolveInstall, reject) => {
+    processHandle.once("error", reject);
+    processHandle.once("exit", (code) => {
+      if (code === 0) {
+        resolveInstall();
+        return;
+      }
+      reject(new Error(`Chromium installation exited with code ${code ?? "unknown"}.`));
+    });
+  });
 }
 
 function printResult(result: WorkflowResult): void {
