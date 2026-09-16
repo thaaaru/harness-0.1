@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 
 import { spawn } from "node:child_process";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { dirname, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { Command } from "commander";
 import { config as loadDotenv } from "dotenv";
 
@@ -12,6 +13,7 @@ import { loadBrandConfig } from "./brand.js";
 import { PlaywrightAppDiscoverer } from "./discovery/playwright-app-discoverer.js";
 import { activateLicense, reportUsageEvent, requireValidLicense } from "./licensing/activate.js";
 import { LicenseError, type LicensePayload } from "./licensing/verify-license.js";
+import { renderReportHtml, renderReportPdf } from "./reporting/report.js";
 import { RunRepository } from "./storage/run-repository.js";
 import { HarnessWorkflow, type WorkflowResult } from "./workflow/harness-workflow.js";
 
@@ -125,6 +127,28 @@ program
   .action(async (runId, options) => {
     await withWorkflow(options.database, async (workflow) => {
       printResult(workflow.getResult(runId));
+    });
+  });
+
+program
+  .command("report <runId>")
+  .description("Generate a branded HTML and PDF report for a run.")
+  .option("--database <path>", "SQLite database path", "data/harness.sqlite")
+  .option("--output <dir>", "output directory", "")
+  .action(async (runId, options) => {
+    await withWorkflow(options.database, async (workflow) => {
+      const result = workflow.getResult(runId);
+      const outputDir = resolve(options.output || `artifacts/${runId}`);
+      mkdirSync(outputDir, { recursive: true });
+
+      const html = renderReportHtml(result, brand);
+      const htmlPath = join(outputDir, "report.html");
+      writeFileSync(htmlPath, html);
+
+      const pdfPath = join(outputDir, "report.pdf");
+      await renderReportPdf(html, pdfPath);
+
+      process.stdout.write(`${JSON.stringify({ html: htmlPath, pdf: pdfPath }, null, 2)}\n`);
     });
   });
 
