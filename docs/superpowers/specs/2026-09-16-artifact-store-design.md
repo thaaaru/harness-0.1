@@ -57,9 +57,12 @@ export const ArtifactSchema = z.object({
 export type Artifact = z.infer<typeof ArtifactSchema>;
 ```
 
-`runs` gains one new nullable field, `projectId?: string`, on
-`HarnessRunInputSchema` (or wherever the run's persisted input lives) — plain
-column, no DB-enforced foreign key (see Storage below for why).
+`runs` needs **no schema migration at all** for this: `HarnessRunInputSchema`
+(in `src/domain.ts`) is stored whole as the `input_json` blob in
+`run-repository.ts` (confirmed by reading it, not assumed) — adding an
+optional `projectId?: string` to that schema makes it flow through
+automatically. No DB-enforced foreign key to `projects.id` (see Storage below
+for why); existence is validated at the application layer instead.
 
 ## Storage
 
