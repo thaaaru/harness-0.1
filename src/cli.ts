@@ -89,7 +89,7 @@ program
         return;
       }
 
-      const finalResult = await runInteractiveReview({
+      await runInteractiveReview({
         workflow,
         result,
         brand,
@@ -97,9 +97,7 @@ program
         controlPlaneUrl: CONTROL_PLANE_URL,
         onStatus: (message) => process.stdout.write(`${message}\n`),
       });
-      process.stdout.write(
-        `Done. Run \`${brand.cliDisplayName} report ${finalResult.runId}\` for a shareable report.\n`,
-      );
+      process.stdout.write("Done.\n");
     });
   });
 

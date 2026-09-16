@@ -12,6 +12,8 @@ export interface NavigationExecutionInput {
   policy: TargetPolicy;
   headless?: boolean;
   artifactsDirectory: string;
+  onCheckStart?: (page: PageSnapshot) => void;
+  onCheckComplete?: (check: NavigationCheck) => void;
 }
 
 export interface NavigationExecutor {
@@ -62,15 +64,16 @@ export class PlaywrightNavigationExecutor implements NavigationExecutor {
       });
 
       for (const pageSnapshot of input.snapshot.pages) {
-        checks.push(
-          await this.checkPage(
-            context.newPage(),
-            pageSnapshot,
-            input.snapshot.targetUrl,
-            policy,
-            outputDirectory,
-          ),
+        input.onCheckStart?.(pageSnapshot);
+        const check = await this.checkPage(
+          context.newPage(),
+          pageSnapshot,
+          input.snapshot.targetUrl,
+          policy,
+          outputDirectory,
         );
+        input.onCheckComplete?.(check);
+        checks.push(check);
       }
     } finally {
       await context.close();

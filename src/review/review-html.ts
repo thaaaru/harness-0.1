@@ -1,10 +1,5 @@
 import type { BrandConfig } from "../brand.js";
-import {
-  escapeHtml,
-  renderDiscoverySection,
-  renderExecutionSection,
-  renderPlanSection,
-} from "../reporting/report.js";
+import { escapeHtml, renderDiscoverySection, renderPlanSection } from "../reporting/report.js";
 import type { WorkflowResult } from "../workflow/harness-workflow.js";
 
 const PAGE_STYLE = `
@@ -29,9 +24,16 @@ const PAGE_STYLE = `
   button.approve { background: #166534; color: white; }
   button.reject { background: #991b1b; color: white; }
   button.execute { background: #1e3a8a; color: white; }
+  button:disabled { opacity: 0.5; cursor: default; }
   label { display: block; margin: 0.5rem 0 0.25rem; font-size: 0.9rem; color: #333; }
   input[type="text"] { padding: 0.4rem; width: 100%; max-width: 320px; box-sizing: border-box; }
   #status { margin-top: 1rem; font-weight: 600; }
+  #log { list-style: none; margin: 1rem 0; padding: 0; font-family: ui-monospace, monospace; font-size: 0.9rem; }
+  #log li { padding: 0.25rem 0; }
+  #log li.pass { color: #166534; }
+  #log li.fail { color: #991b1b; }
+  .completion { border: 1px solid #ddd; border-radius: 8px; padding: 1.5rem; margin-top: 1rem; }
+  .completion a { display: inline-block; margin-right: 1rem; font-weight: 600; }
 `;
 
 function page(title: string, brand: BrandConfig, body: string): string {
@@ -84,16 +86,43 @@ export function renderApprovedPage(result: WorkflowResult, brand: BrandConfig): 
   <h1>Approved</h1>
   <div class="meta">Run <code>${escapeHtml(result.runId)}</code> is ready to execute.</div>
   <div class="actions">
-    <button class="execute" onclick="runExecute()">Execute now</button>
-    <div id="status"></div>
+    <button class="execute" id="execute-button" onclick="runExecute()">Execute now</button>
   </div>
+  <ul id="log"></ul>
+  <div id="completion"></div>
   <script>
-    async function runExecute() {
-      document.getElementById('status').textContent = 'Running checks…';
-      const response = await fetch('/execute', { method: 'POST' });
-      document.open();
-      document.write(await response.text());
-      document.close();
+    function runExecute() {
+      document.getElementById('execute-button').disabled = true;
+      const log = document.getElementById('log');
+      const source = new EventSource('/execute-stream');
+
+      source.addEventListener('check-start', (event) => {
+        const data = JSON.parse(event.data);
+        const item = document.createElement('li');
+        item.textContent = 'Checking ' + data.url + ' …';
+        log.appendChild(item);
+      });
+
+      source.addEventListener('check-complete', (event) => {
+        const data = JSON.parse(event.data);
+        const item = document.createElement('li');
+        item.className = data.status === 'passed' ? 'pass' : 'fail';
+        item.textContent = (data.status === 'passed' ? '\\u2713 ' : '\\u2717 ') + data.url + ' \\u2014 ' + data.status
+          + (data.error ? ': ' + data.error : '');
+        log.appendChild(item);
+      });
+
+      source.addEventListener('done', (event) => {
+        const data = JSON.parse(event.data);
+        source.close();
+        const banner = data.status === 'passed' ? '\\u2705 Test completed' : '\\u26a0\\ufe0f Test completed with failures';
+        document.getElementById('completion').innerHTML =
+          '<div class="completion"><strong>' + banner + '</strong> \\u2014 ' + data.passed + ' of ' + data.total + ' check(s) passed.'
+          + '<div style="margin-top: 1rem;">'
+          + '<a href="/report.html" target="_blank">View full report</a>'
+          + '<a href="/report.pdf" target="_blank">Download PDF</a>'
+          + '</div></div>';
+      });
     }
   </script>`;
 
@@ -106,13 +135,4 @@ export function renderRejectedPage(result: WorkflowResult, brand: BrandConfig): 
     brand,
     `<h1>Rejected</h1><div class="meta">Run <code>${escapeHtml(result.runId)}</code> was rejected. No checks were executed.</div>`,
   );
-}
-
-export function renderResultsPage(result: WorkflowResult, brand: BrandConfig): string {
-  const body = `
-  <h1>${escapeHtml(brand.productName)} — results</h1>
-  <div class="meta">Run <code>${escapeHtml(result.runId)}</code></div>
-  ${result.execution ? renderExecutionSection(result.execution) : ""}`;
-
-  return page("results", brand, body);
 }

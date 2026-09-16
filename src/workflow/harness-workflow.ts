@@ -14,6 +14,8 @@ import {
   type HarnessRunInput,
   type RunStatus,
   type ExecutionResult,
+  type NavigationCheck,
+  type PageSnapshot,
   type TestPlan,
 } from "../domain.js";
 import type { AppDiscoverer } from "../discovery/contracts.js";
@@ -53,6 +55,8 @@ export type WorkflowResult = {
 
 export type ExecutionOptions = {
   headless?: boolean;
+  onCheckStart?: (page: PageSnapshot) => void;
+  onCheckComplete?: (check: NavigationCheck) => void;
 };
 
 export class HarnessWorkflow {
@@ -167,6 +171,8 @@ export class HarnessWorkflow {
         policy: run.input.policy,
         artifactsDirectory: run.input.artifactsDirectory,
         headless,
+        onCheckStart: options.onCheckStart,
+        onCheckComplete: options.onCheckComplete,
       });
       const completedAt = new Date().toISOString();
       this.dependencies.repository.saveExecution(runId, execution, completedAt);
