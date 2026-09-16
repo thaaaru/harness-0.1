@@ -40,6 +40,37 @@ function errorMessage(error: unknown): string {
 }
 
 /**
+ * A full-page screenshot resizes the viewport rather than genuinely
+ * scrolling, so content gated behind an IntersectionObserver (fade-in
+ * reveals, lazy-loaded images below the fold — extremely common on modern
+ * marketing sites) never triggers and shows up blank. Scrolling through the
+ * page in real increments fires those observers before the screenshot.
+ */
+async function scrollThroughPage(page: Page): Promise<void> {
+  await page
+    .evaluate(async () => {
+      await new Promise<void>((resolve) => {
+        const step = 400;
+        let scrolled = 0;
+        let iterations = 0;
+        const maxIterations = 100;
+        const timer = window.setInterval(() => {
+          const scrollHeight = document.body.scrollHeight;
+          window.scrollBy(0, step);
+          scrolled += step;
+          iterations += 1;
+          if (scrolled >= scrollHeight || iterations >= maxIterations) {
+            window.clearInterval(timer);
+            window.scrollTo(0, 0);
+            resolve();
+          }
+        }, 150);
+      });
+    })
+    .catch(() => undefined);
+}
+
+/**
  * Executes only direct GET navigations and read-only title/heading assertions.
  * It deliberately exposes no click, fill, submit, upload, or credential capability.
  */
@@ -132,6 +163,8 @@ export class PlaywrightNavigationExecutor implements NavigationExecutor {
       // non-fatal so a page with persistent connections (analytics,
       // websockets, polling) can't hang the screenshot indefinitely.
       await page.evaluate(() => document.fonts.ready).catch(() => undefined);
+      await page.waitForLoadState("networkidle", { timeout: 5_000 }).catch(() => undefined);
+      await scrollThroughPage(page);
       await page.waitForLoadState("networkidle", { timeout: 5_000 }).catch(() => undefined);
       await page.screenshot({ path: screenshotPath, fullPage: true });
 
