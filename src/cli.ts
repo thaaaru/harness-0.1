@@ -21,7 +21,7 @@ import { HarnessWorkflow, type WorkflowResult } from "./workflow/harness-workflo
 loadDotenv({ quiet: true });
 
 const brand = loadBrandConfig();
-const CONTROL_PLANE_URL = process.env.TEKASSURE_CONTROL_PLANE_URL ?? "https://license.tekassure.dev";
+const CONTROL_PLANE_URL = process.env.TEKASSURE_CONTROL_PLANE_URL ?? "https://license.teklab.dev";
 
 const program = new Command();
 program
