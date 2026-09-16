@@ -130,12 +130,35 @@ export const NavigationCheckSchema = z.object({
 });
 export type NavigationCheck = z.infer<typeof NavigationCheckSchema>;
 
+export const LighthouseCategoryScoreSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  score: z.number().min(0).max(1).nullable(),
+});
+export type LighthouseCategoryScore = z.infer<typeof LighthouseCategoryScoreSchema>;
+
+export const LighthouseFindingSchema = z.object({
+  category: z.string(),
+  title: z.string(),
+  description: z.string(),
+  score: z.number().min(0).max(1).nullable(),
+});
+export type LighthouseFinding = z.infer<typeof LighthouseFindingSchema>;
+
+export const LighthouseAuditResultSchema = z.object({
+  url: z.string().url(),
+  categories: z.array(LighthouseCategoryScoreSchema),
+  findings: z.array(LighthouseFindingSchema),
+});
+export type LighthouseAuditResult = z.infer<typeof LighthouseAuditResultSchema>;
+
 export const ExecutionResultSchema = z.object({
   runId: z.string().uuid(),
   startedAt: z.string().datetime(),
   completedAt: z.string().datetime(),
   status: z.enum(["passed", "failed"]),
   checks: z.array(NavigationCheckSchema).min(1),
+  lighthouse: LighthouseAuditResultSchema.optional(),
 });
 export type ExecutionResult = z.infer<typeof ExecutionResultSchema>;
 

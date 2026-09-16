@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { chromium } from "playwright";
 
 import type { BrandConfig } from "../brand.js";
+import type { ExecutionResult } from "../domain.js";
 import type { WorkflowResult } from "../workflow/harness-workflow.js";
 
 export function renderReportHtml(result: WorkflowResult, brand: BrandConfig): string {
@@ -30,6 +31,14 @@ export function renderReportHtml(result: WorkflowResult, brand: BrandConfig): st
   .errors { color: #991b1b; font-size: 0.9rem; }
   img.screenshot { max-width: 100%; border: 1px solid #ddd; border-radius: 4px; margin-top: 0.5rem; }
   code { background: #f3f4f6; padding: 0.1rem 0.3rem; border-radius: 3px; }
+  .lh-scores { display: flex; gap: 1rem; flex-wrap: wrap; margin: 1rem 0; }
+  .lh-score { border-radius: 8px; padding: 0.75rem 1.25rem; min-width: 100px; text-align: center; }
+  .lh-score .value { font-size: 1.6rem; font-weight: 700; display: block; }
+  .lh-score.good { background: #dcfce7; color: #166534; }
+  .lh-score.average { background: #fef3c7; color: #92400e; }
+  .lh-score.poor { background: #fee2e2; color: #991b1b; }
+  .lh-finding { border-left: 3px solid #d97706; padding-left: 0.75rem; margin-bottom: 0.75rem; }
+  .lh-finding .category { color: #6b7280; font-size: 0.8rem; text-transform: uppercase; }
 </style>
 </head>
 <body>
@@ -135,7 +144,52 @@ export function renderExecutionSection(execution: NonNullable<WorkflowResult["ex
     <h2>Execution results</h2>
     ${statusBadge(execution.status)}
     ${checks}
+    ${execution.lighthouse ? renderLighthouseSection(execution.lighthouse) : ""}
   </section>`;
+}
+
+function renderLighthouseSection(lighthouse: NonNullable<ExecutionResult["lighthouse"]>): string {
+  const scores = lighthouse.categories
+    .map((category) => {
+      const percent = category.score === null ? null : Math.round(category.score * 100);
+      const klass =
+        percent === null ? "average" : percent >= 90 ? "good" : percent >= 50 ? "average" : "poor";
+      return `
+    <div class="lh-score ${klass}">
+      <span class="value">${percent === null ? "—" : percent}</span>
+      ${escapeHtml(category.title)}
+    </div>`;
+    })
+    .join("");
+
+  const findings = lighthouse.findings
+    .map(
+      (finding) => `
+    <div class="lh-finding">
+      <div class="category">${escapeHtml(finding.category)}</div>
+      <strong>${escapeHtml(finding.title)}</strong>
+      <p>${renderMarkdownLinks(finding.description)}</p>
+    </div>`,
+    )
+    .join("");
+
+  return `
+  <div class="card">
+    <h3>Lighthouse audit</h3>
+    <div class="lh-scores">${scores}</div>
+    ${findings || "<p>No significant findings.</p>"}
+  </div>`;
+}
+
+// Lighthouse audit descriptions embed simple `[text](url)` Markdown links
+// (documented behavior, not free-form Markdown) — render just that pattern
+// as a real link instead of showing the literal bracket syntax.
+function renderMarkdownLinks(text: string): string {
+  const escaped = escapeHtml(text);
+  return escaped.replace(
+    /\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g,
+    (_match, label: string, url: string) => `<a href="${url}" target="_blank" rel="noopener">${label}</a>`,
+  );
 }
 
 function screenshotImg(screenshotPath: string | undefined): string {

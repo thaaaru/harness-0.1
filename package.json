@@ -37,9 +37,11 @@
     "@langchain/langgraph": "^1.4.15",
     "@langchain/langgraph-checkpoint-sqlite": "^1.0.4",
     "better-sqlite3": "^13.0.3",
+    "chrome-launcher": "^1.2.1",
     "commander": "^15.0.0",
     "dotenv": "^17.4.2",
     "jose": "^6.2.12",
+    "lighthouse": "^13.4.1",
     "playwright": "^1.63.0",
     "zod": "^4.6.5"
   },

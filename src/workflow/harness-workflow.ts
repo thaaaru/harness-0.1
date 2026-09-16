@@ -23,6 +23,7 @@ import {
   PlaywrightNavigationExecutor,
   type NavigationExecutor,
 } from "../execution/public-navigation-executor.js";
+import { runLighthouseAudit } from "../lighthouse/lighthouse-audit.js";
 import { HeuristicTestPlanner, type TestPlanner } from "../planning/heuristic-planner.js";
 import { RunRepository } from "../storage/run-repository.js";
 
@@ -43,6 +44,8 @@ export type HarnessWorkflowDependencies = {
   discoverer: AppDiscoverer;
   planner?: TestPlanner;
   executor?: NavigationExecutor;
+  /** Injectable for tests — defaults to the real runLighthouseAudit. */
+  lighthouseAuditor?: typeof runLighthouseAudit;
 };
 
 export type WorkflowResult = {
@@ -64,10 +67,12 @@ export class HarnessWorkflow {
   private readonly checkpointer: SqliteSaver;
   private readonly graph: ReturnType<typeof createGraph>;
   private readonly executor: NavigationExecutor;
+  private readonly lighthouseAuditor: typeof runLighthouseAudit;
 
   constructor(private readonly dependencies: HarnessWorkflowDependencies) {
     this.planner = dependencies.planner ?? new HeuristicTestPlanner();
     this.executor = dependencies.executor ?? new PlaywrightNavigationExecutor();
+    this.lighthouseAuditor = dependencies.lighthouseAuditor ?? runLighthouseAudit;
     this.checkpointer = SqliteSaver.fromConnString(dependencies.databasePath);
     this.graph = createGraph(this);
   }
@@ -165,15 +170,21 @@ export class HarnessWorkflow {
     );
 
     try {
-      const execution = await this.executor.execute({
-        runId,
-        snapshot,
-        policy: run.input.policy,
-        artifactsDirectory: run.input.artifactsDirectory,
-        headless,
-        onCheckStart: options.onCheckStart,
-        onCheckComplete: options.onCheckComplete,
-      });
+      const [execution, lighthouse] = await Promise.all([
+        this.executor.execute({
+          runId,
+          snapshot,
+          policy: run.input.policy,
+          artifactsDirectory: run.input.artifactsDirectory,
+          headless,
+          onCheckStart: options.onCheckStart,
+          onCheckComplete: options.onCheckComplete,
+        }),
+        this.lighthouseAuditor(snapshot.targetUrl),
+      ]);
+      if (lighthouse) {
+        execution.lighthouse = lighthouse;
+      }
       const completedAt = new Date().toISOString();
       this.dependencies.repository.saveExecution(runId, execution, completedAt);
       this.dependencies.repository.updateStatus(runId, execution.status, completedAt);

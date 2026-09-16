@@ -84,7 +84,13 @@ describe("HarnessWorkflow", () => {
     const repository = new RunRepository(databasePath);
     const discoverer = new FakeDiscoverer();
     const executor = new FakeNavigationExecutor();
-    const workflow = new HarnessWorkflow({ databasePath, repository, discoverer, executor });
+    const workflow = new HarnessWorkflow({
+      databasePath,
+      repository,
+      discoverer,
+      executor,
+      lighthouseAuditor: async () => undefined,
+    });
     resources.push({ workflow, repository, directory });
 
     const pending = await workflow.start({
