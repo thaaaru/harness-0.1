@@ -69,6 +69,12 @@ program
         },
       });
       printResult(result);
+      if (result.status === "awaiting_approval") {
+        printNextSteps([
+          `${brand.cliDisplayName} approve ${result.runId} --approver "<your name>"`,
+          `${brand.cliDisplayName} execute ${result.runId}`,
+        ]);
+      }
     });
   });
 
@@ -80,7 +86,11 @@ program
   .option("--database <path>", "SQLite database path", "data/harness.sqlite")
   .action(async (runId, options) => {
     await withWorkflow(options.database, async (workflow) => {
-      printResult(await workflow.approve(runId, options.approver, options.note));
+      const result = await workflow.approve(runId, options.approver, options.note);
+      printResult(result);
+      if (result.status === "ready_to_execute") {
+        printNextSteps([`${brand.cliDisplayName} execute ${result.runId}`]);
+      }
     });
   });
 
@@ -110,6 +120,9 @@ program
       const result = await workflow.execute(runId, { headless: options.headless });
       reportUsageEvent(CONTROL_PLANE_URL, { runId, orgId: license.orgId, kind: "execute" });
       printResult(result);
+      if (result.status === "passed" || result.status === "failed") {
+        printNextSteps([`${brand.cliDisplayName} report ${result.runId}`]);
+      }
     });
   });
 
@@ -237,4 +250,10 @@ async function installChromium(): Promise<void> {
 
 function printResult(result: WorkflowResult): void {
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+}
+
+function printNextSteps(commands: string[]): void {
+  const label = commands.length > 1 ? "Next steps:" : "Next step:";
+  const lines = commands.map((command) => `  ${command}`).join("\n");
+  process.stderr.write(`\n${label}\n${lines}\n`);
 }
