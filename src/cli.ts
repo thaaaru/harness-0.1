@@ -1,11 +1,10 @@
 #!/usr/bin/env node
 
-import "dotenv/config";
-
 import { spawn } from "node:child_process";
 import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import { Command } from "commander";
+import { config as loadDotenv } from "dotenv";
 
 import { WEB_APP_BASELINE_PRESET } from "./goal-presets.js";
 
@@ -15,6 +14,11 @@ import { activateLicense, reportUsageEvent, requireValidLicense } from "./licens
 import { LicenseError, type LicensePayload } from "./licensing/verify-license.js";
 import { RunRepository } from "./storage/run-repository.js";
 import { HarnessWorkflow, type WorkflowResult } from "./workflow/harness-workflow.js";
+
+// Runs after all imports resolve; none of them read env vars at import time
+// (only inside function bodies called below), so loading .env here — quietly,
+// since printResult() writes JSON to the same stdout — is safe.
+loadDotenv({ quiet: true });
 
 const brand = loadBrandConfig();
 const CONTROL_PLANE_URL = process.env.TEKASSURE_CONTROL_PLANE_URL ?? "https://license.tekassure.dev";
