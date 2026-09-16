@@ -1,6 +1,4 @@
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir } from "node:fs/promises";
-import { join } from "node:path";
 import { chromium, type Page } from "playwright";
 
 import type { AppSnapshot, DiscoveredControl, PageSnapshot } from "../domain.js";
@@ -37,10 +35,6 @@ export class PlaywrightAppDiscoverer implements AppDiscoverer {
     if (!root) {
       throw new Error("The supplied target URL is not allowed by the discovery policy.");
     }
-
-    const runDirectory = join(request.artifactsDirectory, request.runId);
-    const screenshotDirectory = join(runDirectory, "screenshots");
-    await mkdir(screenshotDirectory, { recursive: true });
 
     const browser = await chromium.launch({ headless: request.headless ?? true });
     const context = await browser.newContext({ serviceWorkers: "block" });
@@ -95,7 +89,6 @@ export class PlaywrightAppDiscoverer implements AppDiscoverer {
           const snapshot = await this.capturePage(
             page,
             candidate,
-            screenshotDirectory,
             policy,
             consoleMessages.slice(consoleStart),
             pageErrors.slice(pageErrorStart),
@@ -140,7 +133,6 @@ export class PlaywrightAppDiscoverer implements AppDiscoverer {
   private async capturePage(
     page: Page,
     requestedUrl: string,
-    screenshotDirectory: string,
     policy: NormalizedPolicy,
     consoleErrors: string[],
     pageErrors: string[],
@@ -191,16 +183,6 @@ export class PlaywrightAppDiscoverer implements AppDiscoverer {
       .slice(0, policy.maxControlsPerPage);
     const sanitizedHeadings = headings.map(redactAndTruncate).filter(Boolean).slice(0, 30);
     const safeTitle = redactAndTruncate(title);
-    const screenshotPath = join(
-      screenshotDirectory,
-      `${fingerprint(currentUrl.toString()).slice(0, 12)}.png`,
-    );
-
-    // "load" fires before web fonts finish swapping in — an icon font
-    // (e.g. Material Symbols, rendered as literal ligature text like
-    // "account_circle") not yet ready shows as raw text overlapping content.
-    await page.evaluate(() => document.fonts.ready).catch(() => undefined);
-    await page.screenshot({ path: screenshotPath, fullPage: true });
 
     const snapshotWithoutFingerprint = {
       url: currentUrl.toString(),
@@ -211,7 +193,6 @@ export class PlaywrightAppDiscoverer implements AppDiscoverer {
       links: unique(links),
       consoleErrors: unique(consoleErrors),
       pageErrors: unique(pageErrors),
-      screenshotPath,
     };
 
     return {

@@ -126,8 +126,13 @@ export class PlaywrightNavigationExecutor implements NavigationExecutor {
 
       const observedTitle = normalizeText(await page.title());
       const observedHeading = normalizeText((await page.locator("h1").first().textContent()) ?? "");
-      // See playwright-app-discoverer.ts's capturePage for why this matters.
+      // "load" fires before web fonts swap in and before images/API-driven
+      // content past the initial HTML finish loading. Wait for fonts, then
+      // give the page a bounded window to go network-idle — capped and
+      // non-fatal so a page with persistent connections (analytics,
+      // websockets, polling) can't hang the screenshot indefinitely.
       await page.evaluate(() => document.fonts.ready).catch(() => undefined);
+      await page.waitForLoadState("networkidle", { timeout: 5_000 }).catch(() => undefined);
       await page.screenshot({ path: screenshotPath, fullPage: true });
 
       const titleMatches = observedTitle === normalizeText(snapshot.title);

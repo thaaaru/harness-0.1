@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 
 import { spawn } from "node:child_process";
-import { mkdirSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { dirname, join, resolve } from "node:path";
+import { dirname, resolve } from "node:path";
+import { userInfo } from "node:os";
 import { Command } from "commander";
 import { config as loadDotenv } from "dotenv";
 
@@ -13,8 +13,9 @@ import { loadBrandConfig } from "./brand.js";
 import { PlaywrightAppDiscoverer } from "./discovery/playwright-app-discoverer.js";
 import { activateLicense, reportUsageEvent, requireValidLicense } from "./licensing/activate.js";
 import { LicenseError, type LicensePayload } from "./licensing/verify-license.js";
-import { renderReportHtml, renderReportPdf } from "./reporting/report.js";
-import { runInteractiveReview } from "./review/review-server.js";
+import { writeReportFiles } from "./reporting/report.js";
+import { openInBrowser } from "./review/browser.js";
+import { printDiscoverySummary, promptApproval } from "./review/terminal-review.js";
 import { RunRepository } from "./storage/run-repository.js";
 import { HarnessWorkflow, type WorkflowResult } from "./workflow/harness-workflow.js";
 
@@ -56,7 +57,7 @@ program
   .option("--database <path>", "SQLite database path", "data/harness.sqlite")
   .option("--artifacts <path>", "artifact directory", "artifacts")
   .option("--headless <boolean>", "run Chromium headlessly (true or false)", parseBoolean, true)
-  .option("--json", "print raw JSON instead of opening an interactive browser review", false)
+  .option("--json", "print raw JSON instead of an interactive terminal review", false)
   .action(async (options) => {
     await withWorkflow(options.database, async (workflow, license) => {
       const result = await workflow.start({
@@ -82,21 +83,45 @@ program
         return;
       }
 
-      const pageCount = result.snapshot?.pages.length ?? 0;
-      process.stdout.write(`Discovered ${pageCount} page(s).\n`);
       if (result.status !== "awaiting_approval") {
         printResult(result);
         return;
       }
 
-      await runInteractiveReview({
-        workflow,
-        result,
-        brand,
-        license,
-        controlPlaneUrl: CONTROL_PLANE_URL,
-        onStatus: (message) => process.stdout.write(`${message}\n`),
+      printDiscoverySummary(result);
+      const decision = await promptApproval(userInfo().username);
+
+      if (!decision.approved) {
+        await workflow.reject(result.runId, decision.approver);
+        process.stdout.write("\nRejected. No checks were executed.\n");
+        return;
+      }
+
+      await workflow.approve(result.runId, decision.approver);
+      process.stdout.write(`\nApproved by ${decision.approver}. Running checks…\n`);
+
+      const executed = await workflow.execute(result.runId, {
+        onCheckStart: (page) => process.stdout.write(`Checking ${page.url} …\n`),
+        onCheckComplete: (check) =>
+          process.stdout.write(
+            `${check.status === "passed" ? "✓" : "✗"} ${check.url} — ${check.status}${
+              check.error ? `: ${check.error}` : ""
+            }\n`,
+          ),
       });
+      reportUsageEvent(CONTROL_PLANE_URL, { runId: result.runId, orgId: license.orgId, kind: "execute" });
+
+      const passed = executed.execution?.checks.filter((check) => check.status === "passed").length ?? 0;
+      const total = executed.execution?.checks.length ?? 0;
+      process.stdout.write(`\n${passed} of ${total} check(s) passed.\n`);
+
+      const { htmlPath, pdfPath } = await writeReportFiles(
+        executed,
+        brand,
+        resolve(`artifacts/${result.runId}`),
+      );
+      process.stdout.write(`Report saved to:\n  ${htmlPath}\n  ${pdfPath}\n`);
+      openInBrowser(`file://${htmlPath}`);
       process.stdout.write("Done.\n");
     });
   });
@@ -175,15 +200,7 @@ program
     await withWorkflow(options.database, async (workflow) => {
       const result = workflow.getResult(runId);
       const outputDir = resolve(options.output || `artifacts/${runId}`);
-      mkdirSync(outputDir, { recursive: true });
-
-      const html = renderReportHtml(result, brand);
-      const htmlPath = join(outputDir, "report.html");
-      writeFileSync(htmlPath, html);
-
-      const pdfPath = join(outputDir, "report.pdf");
-      await renderReportPdf(html, pdfPath);
-
+      const { htmlPath, pdfPath } = await writeReportFiles(result, brand, outputDir);
       process.stdout.write(`${JSON.stringify({ html: htmlPath, pdf: pdfPath }, null, 2)}\n`);
     });
   });

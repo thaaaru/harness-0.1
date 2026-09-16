@@ -1,4 +1,4 @@
-import { mkdtemp, readdir, rm } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -52,11 +52,7 @@ describe("PlaywrightAppDiscoverer", () => {
     expect(snapshot.pages[0]?.controls.some((control) => control.label === "Search orders")).toBe(true);
     expect(snapshot.pages.flatMap((page) => page.links)).not.toContain(`${target.baseUrl}/logout`);
     expect(snapshot.pages.flatMap((page) => page.links)).not.toContain("https://outside.example.test/");
-
-    const screenshots = await readdir(
-      join(artifactsDirectory, "11111111-1111-4111-8111-111111111111", "screenshots"),
-    );
-    expect(screenshots).toHaveLength(2);
+    expect(snapshot.pages.every((page) => page.screenshotPath === undefined)).toBe(true);
   });
 });
 

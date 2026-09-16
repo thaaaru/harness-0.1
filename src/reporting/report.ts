@@ -1,4 +1,5 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { chromium } from "playwright";
 
 import type { BrandConfig } from "../brand.js";
@@ -52,6 +53,23 @@ export async function renderReportPdf(html: string, outputPath: string): Promise
   } finally {
     await browser.close();
   }
+}
+
+export type WrittenReport = { htmlPath: string; pdfPath: string };
+
+/** Renders and writes both report files for a run to `outputDir`. */
+export async function writeReportFiles(
+  result: WorkflowResult,
+  brand: BrandConfig,
+  outputDir: string,
+): Promise<WrittenReport> {
+  mkdirSync(outputDir, { recursive: true });
+  const html = renderReportHtml(result, brand);
+  const htmlPath = join(outputDir, "report.html");
+  writeFileSync(htmlPath, html);
+  const pdfPath = join(outputDir, "report.pdf");
+  await renderReportPdf(html, pdfPath);
+  return { htmlPath, pdfPath };
 }
 
 export function renderPlanSection(plan: NonNullable<WorkflowResult["plan"]>): string {
