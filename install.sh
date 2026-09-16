@@ -2,39 +2,49 @@
 set -euo pipefail
 
 readonly REQUIRED_NODE_MAJOR=22
+readonly PACKAGE_NAME="@thaaaru/tekassure"
+readonly REGISTRY_URL="https://npm.pkg.github.com"
 
+# Customer installer: pulls the published package from the private registry
+# using a read-only token issued at purchase. No git/source access required.
 main() {
   local initial_path="$PATH"
-  local project_root
-  project_root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
   require_command node
-  require_command pnpm
+  require_command npm
   require_supported_node
+  require_registry_token
 
-  cd "$project_root"
+  npm config set "//npm.pkg.github.com/:_authToken" "$TEKASSURE_NPM_TOKEN" --location=user
+  npm install --global --registry "$REGISTRY_URL" "$PACKAGE_NAME"
 
-  export PNPM_HOME="${PNPM_HOME:-$(derive_pnpm_home)}"
-  export PATH="$PNPM_HOME:$PATH"
+  local global_bin_dir
+  global_bin_dir="$(npm prefix --global)/bin"
+  export PATH="$global_bin_dir:$PATH"
 
-  pnpm install --frozen-lockfile
-  pnpm link --global
   tekassure install-browser
-  print_next_step "$initial_path"
+  print_next_step "$initial_path" "$global_bin_dir"
+}
+
+require_registry_token() {
+  if [[ -z "${TEKASSURE_NPM_TOKEN:-}" ]]; then
+    printf 'TEKASSURE_NPM_TOKEN is required (the read-only registry token from your license email).\n' >&2
+    exit 1
+  fi
 }
 
 
 print_next_step() {
   local initial_path="$1"
+  local global_bin_dir="$2"
 
-  if [[ ":$initial_path:" == *":$PNPM_HOME:"* ]]; then
+  if [[ ":$initial_path:" == *":$global_bin_dir:"* ]]; then
     printf '\nTekAssure is ready. Try: tekassure --help\n'
     return
   fi
 
   printf '\nTekAssure is installed. Open a new terminal, or run:\n'
-  printf '  export PNPM_HOME=%q\n' "$PNPM_HOME"
-  printf '  export PATH="$PNPM_HOME:$PATH"\n'
+  printf '  export PATH=%q:"$PATH"\n' "$global_bin_dir"
   printf 'Then try: tekassure --help\n'
 }
 
@@ -55,18 +65,6 @@ require_supported_node() {
     printf 'TekAssure requires Node.js %s or later; found %s.\n' "$REQUIRED_NODE_MAJOR" "$node_major" >&2
     exit 1
   fi
-}
-
-derive_pnpm_home() {
-  local global_root
-  global_root="$(pnpm root --global)"
-
-  if [[ -z "$global_root" ]]; then
-    printf 'Unable to determine pnpm global directory.\n' >&2
-    exit 1
-  fi
-
-  dirname "$(dirname "$(dirname "$global_root")")"
 }
 
 main "$@"

@@ -13,7 +13,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/thaaaru/harness-0.1.git"
+    "url": "git+https://github.com/thaaaru/tekassure.git"
   },
   "scripts": {
     "build": "tsc --project tsconfig.build.json",
@@ -23,8 +23,7 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "tekassure": "tsx src/cli.ts",
-    "harness": "tsx src/cli.ts"
+    "tekassure": "tsx src/cli.ts"
   },
   "files": [
     "dist",
@@ -40,6 +39,7 @@
     "better-sqlite3": "^13.0.3",
     "commander": "^15.0.0",
     "dotenv": "^17.4.2",
+    "jose": "^6.2.12",
     "playwright": "^1.63.0",
     "zod": "^4.6.5"
   },

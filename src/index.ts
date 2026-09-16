@@ -1,4 +1,7 @@
 export * from "./domain.js";
+export * from "./brand.js";
+export * from "./licensing/activate.js";
+export * from "./licensing/verify-license.js";
 export * from "./discovery/contracts.js";
 export * from "./discovery/playwright-app-discoverer.js";
 export * from "./planning/heuristic-planner.js";

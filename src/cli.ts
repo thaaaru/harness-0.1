@@ -9,12 +9,34 @@ import { Command } from "commander";
 
 import { WEB_APP_BASELINE_PRESET } from "./goal-presets.js";
 
+import { loadBrandConfig } from "./brand.js";
 import { PlaywrightAppDiscoverer } from "./discovery/playwright-app-discoverer.js";
+import { activateLicense, reportUsageEvent, requireValidLicense } from "./licensing/activate.js";
+import { LicenseError, type LicensePayload } from "./licensing/verify-license.js";
 import { RunRepository } from "./storage/run-repository.js";
 import { HarnessWorkflow, type WorkflowResult } from "./workflow/harness-workflow.js";
 
+const brand = loadBrandConfig();
+const CONTROL_PLANE_URL = process.env.TEKASSURE_CONTROL_PLANE_URL ?? "https://license.tekassure.dev";
+
 const program = new Command();
-program.name("tekassure").description("TekLab governed AI-assisted Playwright test automation.");
+program
+  .name(brand.cliDisplayName)
+  .description(`${brand.productName} governed AI-assisted Playwright test automation.`);
+
+program
+  .command("license")
+  .description("Manage the local TekAssure license.")
+  .command("activate <key>")
+  .description("Activate a license key issued by the control plane.")
+  .action(async (key: string) => {
+    await withLicenseErrorHandling(async () => {
+      const stored = await activateLicense(key, CONTROL_PLANE_URL);
+      process.stdout.write(
+        `License ${stored.payload.licenseId} activated for org ${stored.payload.orgId}.\n`,
+      );
+    });
+  });
 
 program
   .command("discover")
@@ -78,14 +100,16 @@ program
     parseBoolean,
   )
   .action(async (runId, options) => {
-    await withWorkflow(options.database, async (workflow) => {
-      printResult(await workflow.execute(runId, { headless: options.headless }));
+    await withWorkflow(options.database, async (workflow, license) => {
+      const result = await workflow.execute(runId, { headless: options.headless });
+      reportUsageEvent(CONTROL_PLANE_URL, { runId, orgId: license.orgId, kind: "execute" });
+      printResult(result);
     });
   });
 
 program
   .command("install-browser")
-  .description("Install the matching Chromium browser used by TekAssure.")
+  .description(`Install the matching Chromium browser used by ${brand.productName}.`)
   .action(async () => {
     await installChromium();
   });
@@ -100,12 +124,34 @@ program
     });
   });
 
-void program.parseAsync();
+void program.parseAsync().catch((error: unknown) => {
+  if (error instanceof LicenseError) {
+    process.stderr.write(`${error.message}\n`);
+    process.exitCode = 1;
+    return;
+  }
+  throw error;
+});
+
+async function withLicenseErrorHandling(action: () => Promise<void>): Promise<void> {
+  try {
+    await action();
+  } catch (error) {
+    if (error instanceof LicenseError) {
+      process.stderr.write(`${error.message}\n`);
+      process.exitCode = 1;
+      return;
+    }
+    throw error;
+  }
+}
 
 async function withWorkflow<T>(
   databasePath: string,
-  action: (workflow: HarnessWorkflow) => Promise<T>,
+  action: (workflow: HarnessWorkflow, license: LicensePayload) => Promise<T>,
 ): Promise<T> {
+  const license = await requireValidLicense();
+
   const resolvedDatabasePath = resolve(databasePath);
   const repository = new RunRepository(resolvedDatabasePath);
   const workflow = new HarnessWorkflow({
@@ -115,7 +161,7 @@ async function withWorkflow<T>(
   });
 
   try {
-    return await action(workflow);
+    return await action(workflow, license);
   } finally {
     workflow.close();
     repository.close();
