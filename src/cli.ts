@@ -14,6 +14,7 @@ import { PlaywrightAppDiscoverer } from "./discovery/playwright-app-discoverer.j
 import { activateLicense, reportUsageEvent, requireValidLicense } from "./licensing/activate.js";
 import { LicenseError, type LicensePayload } from "./licensing/verify-license.js";
 import { renderReportHtml, renderReportPdf } from "./reporting/report.js";
+import { runInteractiveReview } from "./review/review-server.js";
 import { RunRepository } from "./storage/run-repository.js";
 import { HarnessWorkflow, type WorkflowResult } from "./workflow/harness-workflow.js";
 
@@ -55,8 +56,9 @@ program
   .option("--database <path>", "SQLite database path", "data/harness.sqlite")
   .option("--artifacts <path>", "artifact directory", "artifacts")
   .option("--headless <boolean>", "run Chromium headlessly (true or false)", parseBoolean, true)
+  .option("--json", "print raw JSON instead of opening an interactive browser review", false)
   .action(async (options) => {
-    await withWorkflow(options.database, async (workflow) => {
+    await withWorkflow(options.database, async (workflow, license) => {
       const result = await workflow.start({
         targetUrl: options.url,
         goal: options.goal,
@@ -68,13 +70,36 @@ program
           allowInsecureHttp: options.allowInsecureHttp,
         },
       });
-      printResult(result);
-      if (result.status === "awaiting_approval") {
-        printNextSteps([
-          `${brand.cliDisplayName} approve ${result.runId} --approver "<your name>"`,
-          `${brand.cliDisplayName} execute ${result.runId}`,
-        ]);
+
+      if (options.json || !process.stdout.isTTY) {
+        printResult(result);
+        if (result.status === "awaiting_approval") {
+          printNextSteps([
+            `${brand.cliDisplayName} approve ${result.runId} --approver "<your name>"`,
+            `${brand.cliDisplayName} execute ${result.runId}`,
+          ]);
+        }
+        return;
       }
+
+      const pageCount = result.snapshot?.pages.length ?? 0;
+      process.stdout.write(`Discovered ${pageCount} page(s).\n`);
+      if (result.status !== "awaiting_approval") {
+        printResult(result);
+        return;
+      }
+
+      const finalResult = await runInteractiveReview({
+        workflow,
+        result,
+        brand,
+        license,
+        controlPlaneUrl: CONTROL_PLANE_URL,
+        onStatus: (message) => process.stdout.write(`${message}\n`),
+      });
+      process.stdout.write(
+        `Done. Run \`${brand.cliDisplayName} report ${finalResult.runId}\` for a shareable report.\n`,
+      );
     });
   });
 

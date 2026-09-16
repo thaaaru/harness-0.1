@@ -54,7 +54,7 @@ export async function renderReportPdf(html: string, outputPath: string): Promise
   }
 }
 
-function renderPlanSection(plan: NonNullable<WorkflowResult["plan"]>): string {
+export function renderPlanSection(plan: NonNullable<WorkflowResult["plan"]>): string {
   const steps = plan.steps
     .map(
       (step) => `
@@ -76,7 +76,7 @@ function renderPlanSection(plan: NonNullable<WorkflowResult["plan"]>): string {
   </section>`;
 }
 
-function renderDiscoverySection(snapshot: NonNullable<WorkflowResult["snapshot"]>): string {
+export function renderDiscoverySection(snapshot: NonNullable<WorkflowResult["snapshot"]>): string {
   const pages = snapshot.pages
     .map((page) => {
       const errors = [...page.consoleErrors, ...page.pageErrors];
@@ -98,7 +98,7 @@ function renderDiscoverySection(snapshot: NonNullable<WorkflowResult["snapshot"]
   </section>`;
 }
 
-function renderExecutionSection(execution: NonNullable<WorkflowResult["execution"]>): string {
+export function renderExecutionSection(execution: NonNullable<WorkflowResult["execution"]>): string {
   const checks = execution.checks
     .map(
       (check) => `
@@ -128,7 +128,7 @@ function screenshotImg(screenshotPath: string | undefined): string {
   return `<img class="screenshot" src="data:image/png;base64,${base64}" alt="screenshot">`;
 }
 
-function statusBadge(status: string): string {
+export function statusBadge(status: string): string {
   const klass =
     status === "passed" ? "passed" : status === "failed" || status === "rejected" ? "failed" : "default";
   return `<span class="badge ${klass}">${escapeHtml(status)}</span>`;
@@ -138,6 +138,6 @@ function riskBadge(risk: string): string {
   return `<span class="badge ${escapeHtml(risk)}">${escapeHtml(risk)}</span>`;
 }
 
-function escapeHtml(value: string): string {
+export function escapeHtml(value: string): string {
   return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
