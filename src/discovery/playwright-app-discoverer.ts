@@ -4,7 +4,12 @@ import { join } from "node:path";
 import { chromium, type Page } from "playwright";
 
 import type { AppSnapshot, DiscoveredControl, PageSnapshot } from "../domain.js";
-import { getSafeDiscoveryUrl, normalizePolicy, type NormalizedPolicy } from "../policy.js";
+import {
+  PASSIVE_CROSS_ORIGIN_RESOURCE_TYPES,
+  getSafeDiscoveryUrl,
+  normalizePolicy,
+  type NormalizedPolicy,
+} from "../policy.js";
 import type { AppDiscoverer, DiscoveryRequest } from "./contracts.js";
 
 type RawControl = {
@@ -43,13 +48,17 @@ export class PlaywrightAppDiscoverer implements AppDiscoverer {
     const pageErrors: string[] = [];
 
     await context.route("**/*", async (route) => {
-      const requestUrl = new URL(route.request().url());
+      const request = route.request();
+      const requestUrl = new URL(request.url());
       const isSafeProtocol = requestUrl.protocol === "data:" || requestUrl.protocol === "blob:";
       const isAllowedOrigin = policy.allowedOrigins.includes(requestUrl.origin);
-      const isReadOnlyNavigation =
-        !route.request().isNavigationRequest() || route.request().method() === "GET";
+      const isReadOnlyNavigation = !request.isNavigationRequest() || request.method() === "GET";
+      const isPassiveCrossOriginAsset =
+        !isAllowedOrigin &&
+        request.method() === "GET" &&
+        PASSIVE_CROSS_ORIGIN_RESOURCE_TYPES.has(request.resourceType());
 
-      if ((!isSafeProtocol && !isAllowedOrigin) || !isReadOnlyNavigation) {
+      if ((!isSafeProtocol && !isAllowedOrigin && !isPassiveCrossOriginAsset) || !isReadOnlyNavigation) {
         await route.abort();
         return;
       }
@@ -82,7 +91,7 @@ export class PlaywrightAppDiscoverer implements AppDiscoverer {
         const pageErrorStart = pageErrors.length;
 
         try {
-          await page.goto(candidate, { waitUntil: "domcontentloaded", timeout: 20_000 });
+          await page.goto(candidate, { waitUntil: "load", timeout: 20_000 });
           const snapshot = await this.capturePage(
             page,
             candidate,
@@ -187,6 +196,10 @@ export class PlaywrightAppDiscoverer implements AppDiscoverer {
       `${fingerprint(currentUrl.toString()).slice(0, 12)}.png`,
     );
 
+    // "load" fires before web fonts finish swapping in — an icon font
+    // (e.g. Material Symbols, rendered as literal ligature text like
+    // "account_circle") not yet ready shows as raw text overlapping content.
+    await page.evaluate(() => document.fonts.ready).catch(() => undefined);
     await page.screenshot({ path: screenshotPath, fullPage: true });
 
     const snapshotWithoutFingerprint = {

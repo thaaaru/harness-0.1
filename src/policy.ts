@@ -11,6 +11,19 @@ const DANGEROUS_PATH_PARTS = [
   "terminate",
 ];
 
+// Passive rendering assets (fonts, stylesheets, images, scripts, media) are
+// allowed cross-origin so pages depending on them (Google Fonts, CDN icon
+// libraries, etc.) render accurately in discovery/execution screenshots.
+// Navigation, XHR/fetch, and websockets stay origin-restricted — the crawler
+// must not wander off-site or trigger third-party API calls.
+export const PASSIVE_CROSS_ORIGIN_RESOURCE_TYPES = new Set([
+  "stylesheet",
+  "font",
+  "image",
+  "media",
+  "script",
+]);
+
 export class PolicyViolationError extends Error {
   constructor(message: string) {
     super(message);

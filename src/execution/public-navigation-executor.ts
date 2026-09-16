@@ -4,7 +4,12 @@ import { join } from "node:path";
 import { chromium, type Page, type Route } from "playwright";
 
 import type { AppSnapshot, ExecutionResult, NavigationCheck, PageSnapshot, TargetPolicy } from "../domain.js";
-import { getSafeDiscoveryUrl, normalizePolicy, type NormalizedPolicy } from "../policy.js";
+import {
+  PASSIVE_CROSS_ORIGIN_RESOURCE_TYPES,
+  getSafeDiscoveryUrl,
+  normalizePolicy,
+  type NormalizedPolicy,
+} from "../policy.js";
 
 export interface NavigationExecutionInput {
   runId: string;
@@ -52,9 +57,16 @@ export class PlaywrightNavigationExecutor implements NavigationExecutor {
     try {
       await context.route("**/*", async (route: Route) => {
         const request = route.request();
+        const isCrossOrigin = !policy.allowedOrigins.includes(new URL(request.url()).origin);
+        const isPassiveCrossOriginAsset =
+          isCrossOrigin &&
+          request.method() === "GET" &&
+          PASSIVE_CROSS_ORIGIN_RESOURCE_TYPES.has(request.resourceType());
+
         if (
-          request.method() !== "GET" ||
-          !getSafeDiscoveryUrl(request.url(), input.snapshot.targetUrl, policy)
+          !isPassiveCrossOriginAsset &&
+          (request.method() !== "GET" ||
+            !getSafeDiscoveryUrl(request.url(), input.snapshot.targetUrl, policy))
         ) {
           await route.abort();
           return;
@@ -107,13 +119,15 @@ export class PlaywrightNavigationExecutor implements NavigationExecutor {
         throw new Error(`Snapshot route violates the execution policy: ${snapshot.url}`);
       }
 
-      await page.goto(safeSnapshotUrl.href, { waitUntil: "domcontentloaded", timeout: 30_000 });
+      await page.goto(safeSnapshotUrl.href, { waitUntil: "load", timeout: 30_000 });
       if (!getSafeDiscoveryUrl(page.url(), targetUrl, policy)) {
         throw new Error(`Navigation redirected outside the execution policy: ${page.url()}`);
       }
 
       const observedTitle = normalizeText(await page.title());
       const observedHeading = normalizeText((await page.locator("h1").first().textContent()) ?? "");
+      // See playwright-app-discoverer.ts's capturePage for why this matters.
+      await page.evaluate(() => document.fonts.ready).catch(() => undefined);
       await page.screenshot({ path: screenshotPath, fullPage: true });
 
       const titleMatches = observedTitle === normalizeText(snapshot.title);
