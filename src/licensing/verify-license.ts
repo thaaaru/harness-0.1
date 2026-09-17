@@ -21,13 +21,13 @@ export type LicensePayload = z.infer<typeof LicensePayloadSchema>;
 const CLOCK_TOLERANCE_SECONDS = 24 * 60 * 60;
 
 export async function verifyLicenseToken(token: string, publicKeyPem?: string): Promise<LicensePayload> {
-  const pem = publicKeyPem ?? process.env.TEKASSURE_LICENSE_PUBLIC_KEY;
+  const pem = publicKeyPem ?? process.env.NOVA_LICENSE_PUBLIC_KEY;
   if (!pem) {
-    throw new LicenseError("No TekAssure license public key configured (TEKASSURE_LICENSE_PUBLIC_KEY).");
+    throw new LicenseError("No Nova license public key configured (NOVA_LICENSE_PUBLIC_KEY).");
   }
 
   const key = await importSPKI(pem, "ES256").catch(() => {
-    throw new LicenseError("TekAssure license public key is malformed.");
+    throw new LicenseError("Nova license public key is malformed.");
   });
 
   try {

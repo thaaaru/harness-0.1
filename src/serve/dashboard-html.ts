@@ -243,7 +243,7 @@ export function renderLoginPage(brand: BrandConfig, error?: string): string {
   <h1>Capture a login session</h1>
   <div class="meta">
     A headed browser opens on the URL below. Log in however the app requires
-    (password, MFA, SSO), then come back here and confirm. TekAssure never
+    (password, MFA, SSO), then come back here and confirm. Nova never
     sees your credentials — only the resulting session is saved.
   </div>
   ${error ? `<p class="errors">${escapeHtml(error)}</p>` : ""}

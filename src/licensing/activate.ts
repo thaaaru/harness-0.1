@@ -12,7 +12,7 @@ export type StoredLicense = {
 };
 
 function licenseDir(): string {
-  return process.env.TEKASSURE_LICENSE_DIR ?? join(homedir(), ".tekassure");
+  return process.env.NOVA_LICENSE_DIR ?? join(homedir(), ".nova");
 }
 
 function licensePath(): string {
@@ -53,7 +53,7 @@ export function loadStoredLicense(): StoredLicense | undefined {
 export async function requireValidLicense(): Promise<LicensePayload> {
   const stored = loadStoredLicense();
   if (!stored) {
-    throw new LicenseError("No TekAssure license found. Run `tekassure license activate <key>` first.");
+    throw new LicenseError("No Nova license found. Run `nova license activate <key>` first.");
   }
   return verifyLicenseToken(stored.token);
 }

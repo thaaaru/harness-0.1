@@ -35,16 +35,16 @@ seeing how the login happened — password, hardware key, SSO redirect, and MFA
 are all opaque to it.
 
 ```text
-tekassure login --url <app> --save-storage-state <path>   (operator, headed, manual)
+nova login --url <app> --save-storage-state <path>   (operator, headed, manual)
                               │
                               ▼
                     <path>/storage-state.json  (cookies + localStorage only)
                               │
                               ▼
-tekassure discover --url <app> --storage-state <path>      (harness, unattended)
+nova discover --url <app> --storage-state <path>      (harness, unattended)
 ```
 
-`tekassure login`:
+`nova login`:
 
 - Always headed (`headless: false`, not configurable) — a human is required.
 - Opens the target URL, prints instructions, and blocks on Enter in the
@@ -54,7 +54,7 @@ tekassure discover --url <app> --storage-state <path>      (harness, unattended)
   and closes the browser. No credential ever crosses into harness state,
   SQLite, or model context — only a path string does.
 
-`tekassure discover --storage-state <path>`:
+`nova discover --storage-state <path>`:
 
 - Validates the file exists at `start()` time (fail fast, not a silent
   degrade) and persists the path — never the content — on

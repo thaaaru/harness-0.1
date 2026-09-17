@@ -33,7 +33,7 @@ import { HarnessWorkflow, type WorkflowResult } from "./workflow/harness-workflo
 loadDotenv({ quiet: true });
 
 const brand = loadBrandConfig();
-const CONTROL_PLANE_URL = process.env.TEKASSURE_CONTROL_PLANE_URL ?? "https://license.teklab.dev";
+const CONTROL_PLANE_URL = process.env.NOVA_CONTROL_PLANE_URL ?? "https://license.teklab.dev";
 
 const program = new Command();
 program
@@ -42,7 +42,7 @@ program
 
 program
   .command("license")
-  .description("Manage the local TekAssure license.")
+  .description("Manage the local Nova license.")
   .command("activate <key>")
   .description("Activate a license key issued by the control plane.")
   .action(async (key: string) => {

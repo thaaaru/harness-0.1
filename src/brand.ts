@@ -5,7 +5,7 @@ export type BrandConfig = {
 
 export function loadBrandConfig(): BrandConfig {
   return {
-    productName: process.env.TEKASSURE_BRAND_PRODUCT_NAME || "TekAssure",
-    cliDisplayName: process.env.TEKASSURE_BRAND_CLI_NAME || "tekassure",
+    productName: process.env.NOVA_BRAND_PRODUCT_NAME || "Nova",
+    cliDisplayName: process.env.NOVA_BRAND_CLI_NAME || "nova",
   };
 }

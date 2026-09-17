@@ -1,15 +1,15 @@
 {
-  "name": "@thaaaru/tekassure",
+  "name": "@thaaaru/nova",
   "version": "0.1.0",
   "private": false,
-  "description": "TekLab governed AI-assisted Playwright test automation.",
+  "description": "Nova governed AI-assisted Playwright test automation.",
   "type": "module",
   "packageManager": "pnpm@10.34.5",
   "engines": {
     "node": ">=22"
   },
   "bin": {
-    "tekassure": "./dist/cli.js"
+    "nova": "./dist/cli.js"
   },
   "repository": {
     "type": "git",
@@ -23,7 +23,7 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "tekassure": "tsx src/cli.ts"
+    "nova": "tsx src/cli.ts"
   },
   "files": [
     "dist",

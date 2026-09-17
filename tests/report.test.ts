@@ -11,7 +11,7 @@ import type { WorkflowResult } from "../src/workflow/harness-workflow.js";
 const brand: BrandConfig = { productName: "Acme Assure", cliDisplayName: "acme-assure" };
 
 function fixtureScreenshot(): string {
-  const dir = mkdtempSync(join(tmpdir(), "tekassure-report-test-"));
+  const dir = mkdtempSync(join(tmpdir(), "nova-report-test-"));
   const path = join(dir, "screenshot.png");
   // Minimal valid 1x1 PNG.
   writeFileSync(

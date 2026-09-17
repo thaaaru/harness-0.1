@@ -1,6 +1,6 @@
-# TekAssure
+# Nova
 
-TekLab’s governed AI-assisted Playwright test automation CLI.
+Nova's governed AI-assisted Playwright test automation CLI.
 
 ## Current milestone
 
@@ -49,13 +49,13 @@ npm login --scope=@thaaaru --auth-type=legacy --registry=https://npm.pkg.github.
 Then install the private package:
 
 ```bash
-npm install --global @thaaaru/tekassure && tekassure install-browser
+npm install --global @thaaaru/nova && nova install-browser
 ```
 
 Use the global command:
 
 ```bash
-tekassure --help
+nova --help
 ```
 
 ````
@@ -64,22 +64,22 @@ tekassure --help
 
 ```bash
 pnpm install
-pnpm tekassure discover \
+pnpm nova discover \
   --url https://staging.example.test \
   --headless false
 ````
 
 ### Default `web-app-baseline` goal
 
-When `--goal` is omitted, TekAssure uses `web-app-baseline`: a broad, governed starting point covering safe public-route reachability, titles, primary headings, and discovery-based navigation/form/authentication boundary review. Pass `--goal "your custom objective"` to override it. Interactive journeys, authentication, submissions, accessibility, responsiveness, performance, and security remain **separate approval scopes**; the default does not execute those actions or claim those checks have run.
+When `--goal` is omitted, Nova uses `web-app-baseline`: a broad, governed starting point covering safe public-route reachability, titles, primary headings, and discovery-based navigation/form/authentication boundary review. Pass `--goal "your custom objective"` to override it. Interactive journeys, authentication, submissions, accessibility, responsiveness, performance, and security remain **separate approval scopes**; the default does not execute those actions or claim those checks have run.
 
 The command prints a `runId` and a pending plan. Inspect it before choosing either outcome:
 
 ```bash
-tekassure status <run-id>
-tekassure approve <run-id> --approver "Tharaka" --note "Scope reviewed"
-tekassure execute <run-id>
-tekassure reject <run-id> --approver "Tharaka" --note "Adjust the proposed flow"
+nova status <run-id>
+nova approve <run-id> --approver "Tharaka" --note "Scope reviewed"
+nova execute <run-id>
+nova reject <run-id> --approver "Tharaka" --note "Adjust the proposed flow"
 ```
 
 `--headless` defaults to `true` during discovery and is persisted with the run. Pass `--headless false` to watch discovery and its later execution; execution may override it with the same flag.
@@ -93,10 +93,10 @@ session once, out of band, and reuse it — the harness never handles the
 password, MFA, or SSO flow itself:
 
 ```bash
-tekassure login --url https://staging.example.test/login --save-storage-state ./auth/staging.json
+nova login --url https://staging.example.test/login --save-storage-state ./auth/staging.json
 # a headed browser opens; log in however the app requires, then press Enter
 
-tekassure discover --url https://staging.example.test --storage-state ./auth/staging.json
+nova discover --url https://staging.example.test --storage-state ./auth/staging.json
 ```
 
 The saved file holds live session cookies — treat it like a credential
@@ -111,11 +111,11 @@ design.
 
 ### Web dashboard
 
-`tekassure serve` starts a persistent local dashboard instead of the CLI's
+`nova serve` starts a persistent local dashboard instead of the CLI's
 one-run-at-a-time flow:
 
 ```bash
-tekassure serve --database data/harness.sqlite --artifacts artifacts
+nova serve --database data/harness.sqlite --artifacts artifacts
 ```
 
 It opens `http://127.0.0.1:<port>/` in your browser: a home page listing

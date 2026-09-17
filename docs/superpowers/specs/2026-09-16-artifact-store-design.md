@@ -2,7 +2,7 @@
 
 ## Context
 
-TekAssure currently generates its test plan bottom-up: `discover` crawls the
+Nova currently generates its test plan bottom-up: `discover` crawls the
 live site and `HeuristicTestPlanner` (`src/planning/heuristic-planner.ts`)
 builds a plan purely from what it finds in the DOM. That plan can only
 describe what's *currently rendered* — it has no way to know what the
@@ -115,13 +115,13 @@ New subcommands in `src/cli.ts`, following the existing command style
 (commander, `withWorkflow`-style resource handling, JSON to stdout):
 
 ```
-tekassure project create --name "TekLab website" [--url https://teklab.dev]
-tekassure project list
-tekassure project show <projectId>
+nova project create --name "TekLab website" [--url https://teklab.dev]
+nova project list
+nova project show <projectId>
 
-tekassure artifact add <projectId> --type requirements --title "DSRS v1.2" --file ./dsrs.md
-tekassure artifact list <projectId> [--type requirements]
-tekassure artifact show <artifactId>
+nova artifact add <projectId> --type requirements --title "DSRS v1.2" --file ./dsrs.md
+nova artifact list <projectId> [--type requirements]
+nova artifact show <artifactId>
 ```
 
 `discover` gains an optional `--project <projectId>` flag, storing it on the

@@ -3,7 +3,7 @@
 ## Context
 
 The artifact store makes approved, project-scoped Markdown requirements available
-to TekAssure. Discovery and the current `HeuristicTestPlanner` remain useful,
+to Nova. Discovery and the current `HeuristicTestPlanner` remain useful,
 but they only describe evidence from the presently rendered application. This
 design adds a top-down planning stage that derives _proposed_ test cases from
 requirements artifacts, then maps them to discovery evidence without granting
@@ -47,7 +47,7 @@ versioned generated-plan artifact, and returns JSON to the CLI.
 
 ```text
 operator
-  | tekassure generate --project <id> [--run <runId>]
+  | nova generate --project <id> [--run <runId>]
   v
 CLI command
   | validates license, project, artifact files, and optional run ownership
@@ -186,7 +186,7 @@ A deterministic fake implementation must be injectable for tests.
 
 ```yaml
 workflow: requirements_test_case_generation
-trigger: tekassure generate --project <projectId> [--run <runId>]
+trigger: nova generate --project <projectId> [--run <runId>]
 risk_class: R2
 
 states:
@@ -239,7 +239,7 @@ warnings. The SQLite artifact type is `generated-test-plan`.
 ## CLI
 
 ```text
-tekassure generate --project <projectId> [--run <runId>] [--artifact <artifactId...>]
+nova generate --project <projectId> [--run <runId>] [--artifact <artifactId...>]
   [--title "Generated requirements test plan"] [--database <path>]
 ```
 

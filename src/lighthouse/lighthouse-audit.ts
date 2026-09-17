@@ -13,7 +13,7 @@ const NON_FINDING_DISPLAY_MODES = new Set(["manual", "informative", "notApplicab
 /**
  * Runs a Lighthouse audit against `url` using a dedicated Chrome instance
  * (Playwright's own bundled Chromium — no separate browser install needed),
- * entirely separate from the browser TekAssure uses for navigation checks.
+ * entirely separate from the browser Nova uses for navigation checks.
  * Never throws: a Lighthouse failure must not fail the overall run.
  */
 export async function runLighthouseAudit(url: string): Promise<LighthouseAuditResult | undefined> {

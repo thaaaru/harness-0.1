@@ -41,7 +41,7 @@ type PendingLogin = { browser: Browser; context: BrowserContext };
  * Starts a persistent local dashboard: lists runs, starts new discovery runs,
  * reviews/approves/executes any pending run, and serves reports — all on
  * 127.0.0.1. Login capture is triggered from the browser, but always opens a
- * real, separate headed browser window; TekAssure never handles credentials.
+ * real, separate headed browser window; Nova never handles credentials.
  */
 export async function startDashboardServer(options: DashboardServerOptions): Promise<DashboardServer> {
   const { databasePath, artifactsDirectory, brand, license, controlPlaneUrl, onStatus } = options;
