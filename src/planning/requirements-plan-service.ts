@@ -2,14 +2,25 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, relative, resolve } from "node:path";
 
-import { ArtifactSchema, type AppSnapshot, type Artifact, type ArtifactType, type RequirementsTestPlan } from "../domain.js";
+import {
+  ArtifactSchema,
+  type AppSnapshot,
+  type Artifact,
+  type ArtifactType,
+  type RequirementsTestPlan,
+} from "../domain.js";
 import { ProjectRepository } from "../storage/project-repository.js";
 import {
   DeterministicRequirementsPlanGenerator,
   type RequirementsPlanGenerator,
 } from "./requirements-plan-generator.js";
 
-const GENERATABLE_ARTIFACT_TYPES = new Set<ArtifactType>(["requirements", "test-spec", "use-case", "api-spec"]);
+const GENERATABLE_ARTIFACT_TYPES = new Set<ArtifactType>([
+  "requirements",
+  "test-spec",
+  "use-case",
+  "api-spec",
+]);
 
 export type GenerateRequirementsPlanInput = {
   projectId: string;
@@ -34,7 +45,12 @@ export class RequirementsPlanService {
   async generate(input: GenerateRequirementsPlanInput): Promise<GeneratedRequirementsPlan> {
     const project = this.repository.getProject(input.projectId);
     const artifacts = this.loadArtifacts(project.id, input.artifactIds);
-    const plan = await this.generator.generate({ project, artifacts, runId: input.runId, snapshot: input.snapshot });
+    const plan = await this.generator.generate({
+      project,
+      artifacts,
+      runId: input.runId,
+      snapshot: input.snapshot,
+    });
     const now = new Date().toISOString();
     const artifactId = randomUUID();
     const artifact = ArtifactSchema.parse({
@@ -60,10 +76,15 @@ export class RequirementsPlanService {
     }
   }
 
-  private loadArtifacts(projectId: string, artifactIds?: string[]): Array<{ artifact: Artifact; markdown: string }> {
+  private loadArtifacts(
+    projectId: string,
+    artifactIds?: string[],
+  ): Array<{ artifact: Artifact; markdown: string }> {
     const artifacts = artifactIds
       ? artifactIds.map((artifactId) => this.repository.getArtifact(artifactId))
-      : this.repository.listArtifacts(projectId).filter((artifact) => GENERATABLE_ARTIFACT_TYPES.has(artifact.type));
+      : this.repository
+          .listArtifacts(projectId)
+          .filter((artifact) => GENERATABLE_ARTIFACT_TYPES.has(artifact.type));
     if (artifacts.length === 0) {
       throw new Error("No requirements, test-spec, use-case, or api-spec artifacts were selected.");
     }
