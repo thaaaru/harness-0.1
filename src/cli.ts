@@ -15,6 +15,7 @@ import { loadBrandConfig } from "./brand.js";
 import { PlaywrightAppDiscoverer } from "./discovery/playwright-app-discoverer.js";
 import { activateLicense, reportUsageEvent, requireValidLicense } from "./licensing/activate.js";
 import { LicenseError, type LicensePayload } from "./licensing/verify-license.js";
+import { RequirementsPlanService } from "./planning/requirements-plan-service.js";
 import { writeReportFiles } from "./reporting/report.js";
 import { runInteractiveReview } from "./review/review-server.js";
 import { ProjectNotFoundError, ProjectRepository } from "./storage/project-repository.js";
@@ -217,6 +218,45 @@ artifact
   .action(async (artifactId, options) => {
     await withProjectRepository(options.database, async (repository) => {
       printJson(repository.getArtifact(artifactId));
+    });
+  });
+
+program
+  .command("generate")
+  .description("Generate reviewable test cases from project requirement artifacts.")
+  .requiredOption("--project <projectId>", "project ID")
+  .option("--run <runId>", "map cases to a discovered run")
+  .option("--artifact <artifactId...>", "select source artifacts")
+  .option("--title <title>", "generated artifact title")
+  .option("--database <path>", "SQLite database path", "data/harness.sqlite")
+  .action(async (options) => {
+    await withProjectRepository(options.database, async (repository) => {
+      let snapshot;
+      if (options.run) {
+        const runRepository = new RunRepository(resolve(options.database));
+        try {
+          const run = runRepository.getRun(options.run);
+          if (run.input.projectId !== options.project) {
+            throw new Error(`Run does not belong to project: ${options.run}`);
+          }
+          snapshot = runRepository.getSnapshot(options.run);
+          if (!snapshot) {
+            throw new Error(`Run has no discovery snapshot: ${options.run}`);
+          }
+        } finally {
+          runRepository.close();
+        }
+      }
+
+      printJson(
+        await new RequirementsPlanService(repository, resolve(".")).generate({
+          projectId: options.project,
+          artifactIds: options.artifact,
+          runId: options.run,
+          snapshot,
+          title: options.title,
+        }),
+      );
     });
   });
 
