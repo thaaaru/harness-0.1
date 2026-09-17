@@ -5,8 +5,8 @@
 Nova currently generates its test plan bottom-up: `discover` crawls the
 live site and `HeuristicTestPlanner` (`src/planning/heuristic-planner.ts`)
 builds a plan purely from what it finds in the DOM. That plan can only
-describe what's *currently rendered* — it has no way to know what the
-application is *supposed* to do per its actual requirements.
+describe what's _currently rendered_ — it has no way to know what the
+application is _supposed_ to do per its actual requirements.
 
 The goal is to let a future test-case-generation agent read requirements-type
 documents (DSRS, DSTS, use cases, OpenAPI specs) to generate test cases
@@ -36,10 +36,10 @@ export const ProjectSchema = z.object({
 export type Project = z.infer<typeof ProjectSchema>;
 
 export const ArtifactTypeSchema = z.enum([
-  "requirements",        // DSRS-style
-  "test-spec",           // DSTS-style, human-authored
+  "requirements", // DSRS-style
+  "test-spec", // DSTS-style, human-authored
   "use-case",
-  "api-spec",            // OpenAPI/GraphQL schema, etc.
+  "api-spec", // OpenAPI/GraphQL schema, etc.
   "generated-test-plan", // reserved: output of a future generation agent
   "other",
 ]);
