@@ -132,6 +132,7 @@ export class PlaywrightNavigationExecutor implements NavigationExecutor {
       completedAt,
       status: checks.every((check) => check.status === "passed") ? "passed" : "failed",
       checks,
+      interactions: [],
     };
   }
 

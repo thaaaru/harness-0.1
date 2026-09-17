@@ -1,12 +1,16 @@
 import { randomUUID } from "node:crypto";
 
-import type { AppSnapshot, TestPlan, TestPlanStep } from "../domain.js";
+import type { AppSnapshot, KnowledgeEntry, TestPlan, TestPlanStep } from "../domain.js";
 import { isWebAppBaselineGoal } from "../goal-presets.js";
 
 export type PlanRequest = {
   runId: string;
   goal: string;
   snapshot: AppSnapshot;
+  /** Whether this run permits "interact" actions. Ignored by this planner — it never proposes any. */
+  allowInteractions?: boolean;
+  /** Prior knowledge-base entries for this target, for planners that can use them. Ignored by this planner. */
+  knowledge?: KnowledgeEntry[];
 };
 
 export interface TestPlanner {
@@ -15,8 +19,9 @@ export interface TestPlanner {
 
 /**
  * A conservative baseline planner. It creates a reviewable plan from structured
- * discovery evidence and deliberately leaves unknown state-changing actions for
- * a human-approved LLM planner in a later milestone.
+ * discovery evidence, purely by pattern-matching — no interact actions, no
+ * reasoning about the app's purpose. Serves as the fallback for LlmTestPlanner
+ * when no OPENAI_API_KEY is configured or a model call fails.
  */
 export class HeuristicTestPlanner implements TestPlanner {
   async createPlan({ runId, goal, snapshot }: PlanRequest): Promise<TestPlan> {

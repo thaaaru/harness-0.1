@@ -352,6 +352,8 @@ export function renderHomePage(runs: RunRecord[], projects: Project[], brand: Br
 
       <label><input type="checkbox" name="allowInsecureHttp" value="true"> Allow plain HTTP (local/isolated targets only)</label>
 
+      <label><input type="checkbox" name="allowInteractions" value="true"> Allow interactions (click/fill/select) — reviewed and denylist-filtered before running, but not read-only</label>
+
       ${
         projects.length > 0
           ? `<label for="projectId">Project (optional)</label>

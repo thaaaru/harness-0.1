@@ -90,17 +90,35 @@ export function renderPlanSection(plan: NonNullable<WorkflowResult["plan"]>): st
       ${riskBadge(step.risk)}
       ${step.requiresApproval ? '<span class="badge default">requires approval</span>' : ""}
       <p>${escapeHtml(step.rationale)}</p>
+      <ul>${step.actions.map((action) => `<li>${renderAction(action)}</li>`).join("")}</ul>
       <p><em>Expected:</em> ${escapeHtml(step.expectedResult)}</p>
     </div>`,
     )
     .join("");
 
+  const warnings =
+    plan.warnings.length > 0 ? `<p class="errors">${plan.warnings.map(escapeHtml).join("; ")}</p>` : "";
+
   return `
   <section>
     <h2>Test plan</h2>
     <p>${escapeHtml(plan.summary)}</p>
+    ${warnings}
     ${steps}
   </section>`;
+}
+
+function renderAction(
+  action: NonNullable<WorkflowResult["plan"]>["steps"][number]["actions"][number],
+): string {
+  const badge = `<span class="badge default">${escapeHtml(action.kind)}</span>`;
+  if (action.kind !== "interact" || !action.target) {
+    return `${badge} ${escapeHtml(action.description)}`;
+  }
+  const target = action.target;
+  const name = target.label ?? target.name ?? "(unnamed)";
+  const value = action.value ? ` with <code>${escapeHtml(action.value)}</code>` : "";
+  return `${badge} ${escapeHtml(action.description)} — <code>${escapeHtml(target.kind)} "${escapeHtml(name)}"</code> on <code>${escapeHtml(target.page)}</code>${value}`;
 }
 
 export function renderDiscoverySection(snapshot: NonNullable<WorkflowResult["snapshot"]>): string {
@@ -139,11 +157,24 @@ export function renderExecutionSection(execution: NonNullable<WorkflowResult["ex
     )
     .join("");
 
+  const interactions = execution.interactions
+    .map(
+      (interaction) => `
+    <div class="card">
+      ${statusBadge(interaction.status)} ${escapeHtml(interaction.description)}
+      ${interaction.observedUrl ? `<p>Ended at <code>${escapeHtml(interaction.observedUrl)}</code></p>` : ""}
+      ${interaction.error ? `<p class="errors">${escapeHtml(interaction.error)}</p>` : ""}
+      ${screenshotImg(interaction.screenshotPath)}
+    </div>`,
+    )
+    .join("");
+
   return `
   <section>
     <h2>Execution results</h2>
     ${statusBadge(execution.status)}
     ${checks}
+    ${interactions.length > 0 ? `<h3>Interactions</h3>${interactions}` : ""}
     ${execution.lighthouse ? renderLighthouseSection(execution.lighthouse) : ""}
   </section>`;
 }

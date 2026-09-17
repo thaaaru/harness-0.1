@@ -4,19 +4,21 @@ Nova's governed AI-assisted Playwright test automation CLI.
 
 ## Current milestone
 
-The harness discovers an approved application, persists a compact app map in SQLite, generates a reviewable test plan, and pauses for explicit approval. An approved run can then execute only direct, same-origin `GET` navigations with title and primary-heading assertions; state-changing browser actions remain unavailable.
+The harness discovers an approved application, persists a compact app map in SQLite, generates a reviewable test plan (an LLM-backed planner reasons over the discovery snapshot and prior knowledge-base entries when `OPENAI_API_KEY` is set, falling back to a deterministic heuristic planner otherwise), and pauses for explicit approval. By default an approved run can only execute direct, same-origin `GET` navigations with title and primary-heading assertions. Passing `--allow-interactions` additionally permits grounded, denylist-filtered click/fill/select actions the plan proposes — every such action must resolve to a control the discoverer actually found, is dropped if it matches a destructive-verb denylist, and still requires the same human approval as everything else in the plan before it runs.
 
 ```text
-Discover (read-only) → Plan → Human approval → Constrained read-only execution
+Discover (read-only) → Plan (heuristic or LLM-reasoned) → Human approval → Constrained execution (read-only by default, opt-in interaction)
 ```
 
 ### Safety boundaries
 
 - Discovery never clicks, fills, submits, uploads, or handles credentials; an authenticated run only reuses a session an operator captured separately (see [Authenticated scans](#authenticated-scans)).
-- Execution exposes no click, fill, submit, upload, authentication, or credential capability; it can only navigate with `GET` and assert the approved discovery snapshot.
+- Execution is read-only by default: no click, fill, submit, upload, authentication, or credential capability; it can only navigate with `GET` and assert the approved discovery snapshot.
+- `--allow-interactions` is opt-in and off by default. When set, only "interact" actions whose target is grounded in the discovered app's actual controls are ever attempted; an action referencing a page/control that doesn't exist is dropped, not attempted blind. Every dropped action is recorded in the plan's warnings so the reviewer sees exactly what was removed and why.
+- Interactions are further filtered against a destructive-verb denylist (delete, pay, checkout, cancel account, unsubscribe, and similar) regardless of the interactions flag — no plan, heuristic or model-generated, can propose one of these and have it survive to execution.
 - HTTPS is required by default; use `--allow-insecure-http` only for local/isolated test environments.
-- Only configured origins may load; cross-origin requests are blocked.
-- Known destructive URL paths are not crawled.
+- Only configured origins may load; cross-origin requests are blocked, including non-`GET` requests triggered by an interaction.
+- Known destructive URL paths are not crawled or interacted with.
 - Secrets are referenced by name only and must never enter model context.
 - Raw screenshots and future traces stay in artifacts; the app map contains bounded, redacted metadata.
 
@@ -103,9 +105,11 @@ The saved file holds live session cookies — treat it like a credential
 (`0600` permissions, not committed to version control). `discover` fails fast
 if the path does not exist. Once a run is created with `--storage-state`, its
 later `execute` reuses the same session automatically. Every other guarantee
-in [Safety boundaries](#safety-boundaries) is unchanged: no click, fill,
-submit, or upload is added by authenticating; the crawl can only reach
-further pages, not perform further actions. See
+in [Safety boundaries](#safety-boundaries) is unchanged: authenticating
+doesn't add any capability by itself — it only lets the crawl and any
+opted-in interactions reach pages that require a session; whether
+interactions are possible at all is still governed solely by
+`--allow-interactions`. See
 `docs/superpowers/specs/2026-09-17-authenticated-scan-design.md` for the full
 design.
 
@@ -141,7 +145,7 @@ nova knowledge search "checkout"
 nova knowledge show <entry-id>
 ```
 
-Nothing currently reads the knowledge base back into planning or execution — it is pure accumulated record for a human to browse and search.
+The same `OPENAI_API_KEY` also drives planning: `discover` feeds up to the 10 most recent knowledge entries for the target URL, plus the full discovery snapshot, to an LLM-backed planner that proposes the reviewable test plan. Without a key (or if a model call fails or returns something invalid), planning falls back to a deterministic heuristic planner — the same one that was previously the only option.
 
 ## Commands
 
@@ -156,10 +160,10 @@ pnpm format:check
 ## Architecture
 
 - **SQLite** — run records, app snapshots, plans, execution results, and audit events (`data/harness.sqlite`); a separate knowledge base of captured domain knowledge, failures, and solutions (`data/knowledge.sqlite`)
-- **Playwright** — read-only app discovery, constrained `GET` navigation assertions, and evidence capture
+- **Playwright** — read-only app discovery, constrained `GET` navigation assertions, evidence capture, and (opt-in via `--allow-interactions`) grounded click/fill/select execution
 - **Zod** — validated run, policy, snapshot, plan, approval, and knowledge schemas
-- **OpenAI (optional)** — best-effort post-run knowledge extraction; only called when `OPENAI_API_KEY` is set
+- **OpenAI (optional)** — LLM-backed test planning grounded in the discovery snapshot and prior knowledge-base entries, and best-effort post-run knowledge extraction; only called when `OPENAI_API_KEY` is set, with a deterministic heuristic fallback for planning either way
 
 ## Next milestone
 
-Add separately proposed-and-approved interaction adapters (such as mobile-navigation and form-validation checks), named test-account secrets outside model context, deterministic assertions, and cleanup for any future test data.
+Named test-account secrets outside model context, deterministic assertions beyond title/heading matching, and cleanup for any test data an interaction creates.

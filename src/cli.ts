@@ -62,6 +62,12 @@ program
   .option("--allow-origin <origin...>", "additional permitted origins", [])
   .option("--max-pages <count>", "maximum routes to inspect", parsePositiveInteger, 10)
   .option("--allow-insecure-http", "permit HTTP for a local or isolated test environment", false)
+  .option(
+    "--allow-interactions",
+    "let the planner propose, and the run execute, safe click/fill/select interactions " +
+      "(grounded against discovered controls, denylist-filtered, still human-reviewed before running)",
+    false,
+  )
   .option("--database <path>", "SQLite database path", "data/harness.sqlite")
   .option("--knowledge-database <path>", "SQLite knowledge-base path", "data/knowledge.sqlite")
   .option("--artifacts <path>", "artifact directory", "artifacts")
@@ -90,6 +96,7 @@ program
         artifactsDirectory,
         headless: options.headless,
         storageStatePath: options.storageState ? resolve(options.storageState) : undefined,
+        allowInteractions: options.allowInteractions,
         policy: {
           allowedOrigins: options.allowOrigin,
           maxPages: options.maxPages,

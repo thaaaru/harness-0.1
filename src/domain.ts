@@ -158,13 +158,39 @@ export const HarnessRunInputSchema = z.object({
   artifactsDirectory: z.string().min(1).default("artifacts"),
   headless: z.boolean().default(true),
   storageStatePath: z.string().min(1).optional(),
+  /**
+   * Opt-in, default false: permits the planner to propose "interact" actions
+   * (click/fill/submit) and the workflow to actually execute them, subject
+   * to grounding against discovered controls and a destructive-action
+   * denylist. When false, interact actions are never planned or executed —
+   * discovery/execution stay strictly read-only navigation.
+   */
+  allowInteractions: z.boolean().default(false),
 });
 export type HarnessRunInput = z.infer<typeof HarnessRunInputSchema>;
+
+/**
+ * Identifies a discovered control an "interact" action should operate on.
+ * `kind` maps to a Playwright ARIA role for locating it; `label`/`name`
+ * supply the accessible name to match. Grounded against the run's actual
+ * AppSnapshot before execution — an ungrounded target is never executed.
+ */
+export const InteractionTargetSchema = z.object({
+  page: z.string(),
+  kind: ControlKindSchema,
+  label: z.string().optional(),
+  name: z.string().optional(),
+});
+export type InteractionTarget = z.infer<typeof InteractionTargetSchema>;
 
 export const PlannedActionSchema = z.object({
   kind: z.enum(["navigate", "inspect", "authenticate", "interact", "assert", "cleanup"]),
   description: z.string(),
   secretReference: z.string().optional(),
+  /** Required for "interact" actions; ignored for every other kind. */
+  target: InteractionTargetSchema.optional(),
+  /** Text to type (textbox/textarea) or option value to select (select). */
+  value: z.string().optional(),
 });
 export type PlannedAction = z.infer<typeof PlannedActionSchema>;
 
@@ -203,6 +229,16 @@ export const NavigationCheckSchema = z.object({
 });
 export type NavigationCheck = z.infer<typeof NavigationCheckSchema>;
 
+export const InteractionCheckSchema = z.object({
+  stepId: z.string(),
+  description: z.string(),
+  status: z.enum(["passed", "failed", "skipped"]),
+  observedUrl: z.string().optional(),
+  screenshotPath: z.string().optional(),
+  error: z.string().optional(),
+});
+export type InteractionCheck = z.infer<typeof InteractionCheckSchema>;
+
 export const LighthouseCategoryScoreSchema = z.object({
   id: z.string(),
   title: z.string(),
@@ -231,6 +267,7 @@ export const ExecutionResultSchema = z.object({
   completedAt: z.string().datetime(),
   status: z.enum(["passed", "failed"]),
   checks: z.array(NavigationCheckSchema).min(1),
+  interactions: z.array(InteractionCheckSchema).default([]),
   lighthouse: LighthouseAuditResultSchema.optional(),
 });
 export type ExecutionResult = z.infer<typeof ExecutionResultSchema>;

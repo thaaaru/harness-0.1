@@ -9,6 +9,7 @@ import {
   type ApprovalDecision,
   type AppSnapshot,
   type HarnessRunInput,
+  type InteractionCheck,
   type RunRecord,
   type RunStatus,
   type ExecutionResult,
@@ -21,10 +22,16 @@ import {
   PlaywrightNavigationExecutor,
   type NavigationExecutor,
 } from "../execution/public-navigation-executor.js";
+import {
+  PlaywrightInteractionExecutor,
+  type InteractionExecutor,
+} from "../execution/interaction-executor.js";
 import { runLighthouseAudit } from "../lighthouse/lighthouse-audit.js";
 import { captureKnowledge } from "../knowledge/learning-agent.js";
 import { summarizeRunForKnowledge } from "../knowledge/openai-summarizer.js";
-import { HeuristicTestPlanner, type TestPlanner } from "../planning/heuristic-planner.js";
+import type { TestPlanner } from "../planning/heuristic-planner.js";
+import { LlmTestPlanner } from "../planning/llm-test-planner.js";
+import { enforcePlanSafety } from "../planning/plan-safety.js";
 import type { KnowledgeRepository } from "../storage/knowledge-repository.js";
 import { RunRepository } from "../storage/run-repository.js";
 
@@ -33,6 +40,8 @@ export type HarnessWorkflowDependencies = {
   discoverer: AppDiscoverer;
   planner?: TestPlanner;
   executor?: NavigationExecutor;
+  /** Injectable for tests — defaults to the real PlaywrightInteractionExecutor. */
+  interactionExecutor?: InteractionExecutor;
   /** Injectable for tests — defaults to the real runLighthouseAudit. */
   lighthouseAuditor?: typeof runLighthouseAudit;
   /** Optional: when set, every terminal run state triggers a best-effort knowledge capture. */
@@ -53,6 +62,8 @@ export type ExecutionOptions = {
   headless?: boolean;
   onCheckStart?: (page: PageSnapshot) => void;
   onCheckComplete?: (check: NavigationCheck) => void;
+  onInteractionStart?: (description: string) => void;
+  onInteractionComplete?: (result: InteractionCheck) => void;
 };
 
 const DISCOVER_MAX_ATTEMPTS = 2;
@@ -68,11 +79,13 @@ const DISCOVER_MAX_ATTEMPTS = 2;
 export class HarnessWorkflow {
   private readonly planner: TestPlanner;
   private readonly executor: NavigationExecutor;
+  private readonly interactionExecutor: InteractionExecutor;
   private readonly lighthouseAuditor: typeof runLighthouseAudit;
 
   constructor(private readonly dependencies: HarnessWorkflowDependencies) {
-    this.planner = dependencies.planner ?? new HeuristicTestPlanner();
+    this.planner = dependencies.planner ?? new LlmTestPlanner();
     this.executor = dependencies.executor ?? new PlaywrightNavigationExecutor();
+    this.interactionExecutor = dependencies.interactionExecutor ?? new PlaywrightInteractionExecutor();
     this.lighthouseAuditor = dependencies.lighthouseAuditor ?? runLighthouseAudit;
   }
 
@@ -150,8 +163,15 @@ export class HarnessWorkflow {
     if (!snapshot || snapshot.pages.length === 0) {
       throw new Error(`Run ${runId} has no discovered pages to execute.`);
     }
+    const plan = this.dependencies.repository.getPlan(runId);
+    if (!plan) {
+      throw new Error(`Run ${runId} has no approved plan to execute.`);
+    }
 
     const headless = options.headless ?? run.input.headless;
+    const hasInteractions = plan.steps.some((step) =>
+      step.actions.some((action) => action.kind === "interact"),
+    );
 
     const startedAt = new Date().toISOString();
     this.dependencies.repository.updateStatus(runId, "executing", startedAt);
@@ -159,7 +179,7 @@ export class HarnessWorkflow {
       runId,
       "execution_started",
       {
-        mode: "approved_read_only_navigation",
+        mode: hasInteractions ? "approved_navigation_and_interaction" : "approved_read_only_navigation",
         pageCount: snapshot.pages.length,
         headless,
       },
@@ -167,7 +187,7 @@ export class HarnessWorkflow {
     );
 
     try {
-      const [execution, lighthouse] = await Promise.all([
+      const [execution, interactions, lighthouse] = await Promise.all([
         this.executor.execute({
           runId,
           snapshot,
@@ -178,8 +198,23 @@ export class HarnessWorkflow {
           onCheckStart: options.onCheckStart,
           onCheckComplete: options.onCheckComplete,
         }),
+        this.interactionExecutor.execute({
+          runId,
+          snapshot,
+          plan,
+          policy: run.input.policy,
+          artifactsDirectory: run.input.artifactsDirectory,
+          storageStatePath: run.input.storageStatePath,
+          headless,
+          onInteractionStart: options.onInteractionStart,
+          onInteractionComplete: options.onInteractionComplete,
+        }),
         this.lighthouseAuditor(snapshot.targetUrl),
       ]);
+      execution.interactions = interactions;
+      if (interactions.some((interaction) => interaction.status === "failed")) {
+        execution.status = "failed";
+      }
       if (lighthouse) {
         execution.lighthouse = lighthouse;
       }
@@ -193,16 +228,19 @@ export class HarnessWorkflow {
           status: execution.status,
           checkedPageCount: execution.checks.length,
           failedPageCount: execution.checks.filter((check) => check.status === "failed").length,
+          interactionCount: execution.interactions.length,
+          failedInteractionCount: execution.interactions.filter(
+            (interaction) => interaction.status === "failed",
+          ).length,
         },
         completedAt,
       );
 
-      const plan = this.dependencies.repository.getPlan(runId);
       await this.recordKnowledge(runId, "completed", {
         targetUrl: run.input.targetUrl,
         goal: run.input.goal,
-        discoveredRoutes: plan?.discoveredRoutes,
-        planSummary: plan?.summary,
+        discoveredRoutes: plan.discoveredRoutes,
+        planSummary: plan.summary,
         checks: execution.checks.map((check) => ({
           url: check.url,
           status: check.status,
@@ -276,7 +314,15 @@ export class HarnessWorkflow {
   }
 
   private async plan(runId: string, input: HarnessRunInput, snapshot: AppSnapshot): Promise<TestPlan> {
-    const plan = await this.planner.createPlan({ runId, goal: input.goal, snapshot });
+    const knowledge = this.dependencies.knowledgeRepository?.list({ targetUrl: input.targetUrl, limit: 10 });
+    const rawPlan = await this.planner.createPlan({
+      runId,
+      goal: input.goal,
+      snapshot,
+      allowInteractions: input.allowInteractions,
+      knowledge,
+    });
+    const plan = enforcePlanSafety(rawPlan, snapshot, input.allowInteractions);
     const now = new Date().toISOString();
     this.dependencies.repository.savePlan(runId, plan, now);
     this.dependencies.repository.updateStatus(runId, "awaiting_approval", now);

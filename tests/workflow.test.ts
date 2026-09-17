@@ -65,6 +65,7 @@ class FakeNavigationExecutor implements NavigationExecutor {
         observedHeading: page.headings.at(0),
         status: "passed",
       })),
+      interactions: [],
     };
   }
 }
@@ -91,6 +92,7 @@ class ThrowOnceNavigationExecutor implements NavigationExecutor {
         observedHeading: page.headings.at(0),
         status: "passed",
       })),
+      interactions: [],
     };
   }
 }

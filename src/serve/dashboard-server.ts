@@ -88,6 +88,7 @@ export async function startDashboardServer(options: DashboardServerOptions): Pro
         projectId: body.projectId || undefined,
         artifactsDirectory,
         storageStatePath: body.storageStatePath ? resolve(body.storageStatePath) : undefined,
+        allowInteractions: body.allowInteractions === "true",
         policy: {
           allowedOrigins: [],
           maxPages: body.maxPages ? Number.parseInt(body.maxPages, 10) : undefined,

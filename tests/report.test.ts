@@ -44,6 +44,7 @@ describe("renderReportHtml", () => {
             screenshotPath: fixtureScreenshot(),
           },
         ],
+        interactions: [],
       },
     };
 
@@ -73,6 +74,7 @@ describe("renderReportHtml", () => {
             error: "Timed out waiting for navigation",
           },
         ],
+        interactions: [],
       },
     };
 

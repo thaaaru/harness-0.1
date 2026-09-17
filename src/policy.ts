@@ -1,6 +1,6 @@
 import type { TargetPolicy } from "./domain.js";
 
-const DANGEROUS_PATH_PARTS = [
+export const DANGEROUS_PATH_PARTS = [
   "delete",
   "destroy",
   "logout",
@@ -105,7 +105,7 @@ function isSupportedProtocol(url: URL, allowInsecureHttp: boolean): boolean {
   return url.protocol === "https:" || (allowInsecureHttp && url.protocol === "http:");
 }
 
-function isPotentiallyDestructivePath(url: URL): boolean {
+export function isPotentiallyDestructivePath(url: URL): boolean {
   const searchable = `${url.pathname}${url.search}`.toLowerCase();
   return DANGEROUS_PATH_PARTS.some((part) => searchable.includes(part));
 }
