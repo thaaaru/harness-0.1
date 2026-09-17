@@ -109,6 +109,24 @@ further pages, not perform further actions. See
 `docs/superpowers/specs/2026-09-17-authenticated-scan-design.md` for the full
 design.
 
+### Web dashboard
+
+`tekassure serve` starts a persistent local dashboard instead of the CLI's
+one-run-at-a-time flow:
+
+```bash
+tekassure serve --database data/harness.sqlite --artifacts artifacts
+```
+
+It opens `http://127.0.0.1:<port>/` in your browser: a home page listing
+every run with a form to start new ones, a run page per scan for
+approve/reject and live-streamed execution, on-demand HTML/PDF reports, and
+a login page that opens a real headed browser to capture a storage state
+file for authenticated scans (see [Authenticated
+scans](#authenticated-scans)). It binds to `127.0.0.1` only and stops with
+Ctrl+C. All the same [Safety boundaries](#safety-boundaries) apply — the
+dashboard is a UI over the same governed workflow, not a new capability.
+
 ## Commands
 
 ```bash

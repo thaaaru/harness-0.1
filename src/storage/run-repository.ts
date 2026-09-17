@@ -68,16 +68,12 @@ export class RunRepository {
       throw new Error(`Run not found: ${runId}`);
     }
 
-    return RunRecordSchema.parse({
-      id: row.id,
-      targetUrl: row.target_url,
-      goal: row.goal,
-      status: row.status,
-      input: JSON.parse(row.input_json),
-      approval: row.approval_json ? ApprovalDecisionSchema.parse(JSON.parse(row.approval_json)) : undefined,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at,
-    });
+    return this.toRunRecord(row);
+  }
+
+  listRuns(): RunRecord[] {
+    const rows = this.db.prepare("SELECT * FROM runs ORDER BY created_at DESC").all() as StoredRun[];
+    return rows.map((row) => this.toRunRecord(row));
   }
 
   updateStatus(runId: string, status: RunStatus, updatedAt: string): void {
@@ -206,6 +202,19 @@ export class RunRepository {
         created_at TEXT NOT NULL
       );
     `);
+  }
+
+  private toRunRecord(row: StoredRun): RunRecord {
+    return RunRecordSchema.parse({
+      id: row.id,
+      targetUrl: row.target_url,
+      goal: row.goal,
+      status: row.status,
+      input: JSON.parse(row.input_json),
+      approval: row.approval_json ? ApprovalDecisionSchema.parse(JSON.parse(row.approval_json)) : undefined,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    });
   }
 
   private assertRunWasUpdated(runId: string, changes: number | bigint): void {

@@ -21,6 +21,8 @@ import { LicenseError, type LicensePayload } from "./licensing/verify-license.js
 import { RequirementsPlanService } from "./planning/requirements-plan-service.js";
 import { writeReportFiles } from "./reporting/report.js";
 import { runInteractiveReview } from "./review/review-server.js";
+import { openInBrowser } from "./review/browser.js";
+import { startDashboardServer } from "./serve/dashboard-server.js";
 import { ProjectNotFoundError, ProjectRepository } from "./storage/project-repository.js";
 import { RunRepository } from "./storage/run-repository.js";
 import { HarnessWorkflow, type WorkflowResult } from "./workflow/harness-workflow.js";
@@ -333,9 +335,7 @@ program
     await requireValidLicense();
     const storageStatePath = resolve(options.saveStorageState);
     await saveAuthenticatedStorageState(options.url, storageStatePath);
-    printNextSteps([
-      `${brand.cliDisplayName} discover --url <app-url> --storage-state ${storageStatePath}`,
-    ]);
+    printNextSteps([`${brand.cliDisplayName} discover --url <app-url> --storage-state ${storageStatePath}`]);
   });
 
 program
@@ -361,6 +361,39 @@ program
       const { htmlPath, pdfPath } = await writeReportFiles(result, brand, outputDir);
       process.stdout.write(`${JSON.stringify({ html: htmlPath, pdf: pdfPath }, null, 2)}\n`);
     });
+  });
+
+program
+  .command("serve")
+  .description(
+    "Run a persistent local dashboard: start scans, capture logins, and review/approve/execute/report from your browser.",
+  )
+  .option("--database <path>", "SQLite database path", "data/harness.sqlite")
+  .option("--artifacts <path>", "artifact directory", "artifacts")
+  .option("--port <port>", "port to listen on (default: pick any free port)", parsePositiveInteger)
+  .action(async (options) => {
+    const license = await requireValidLicense();
+    const dashboard = await startDashboardServer({
+      databasePath: resolve(options.database),
+      artifactsDirectory: resolve(options.artifacts),
+      brand,
+      license,
+      controlPlaneUrl: CONTROL_PLANE_URL,
+      port: options.port,
+      onStatus: (message) => process.stdout.write(`${message}\n`),
+    });
+
+    process.stdout.write(`${brand.productName} dashboard running at ${dashboard.url}\n`);
+    process.stdout.write("Press Ctrl+C to stop.\n");
+    openInBrowser(dashboard.url);
+
+    await new Promise<void>((resolveShutdown) => {
+      process.once("SIGINT", () => resolveShutdown());
+      process.once("SIGTERM", () => resolveShutdown());
+    });
+
+    process.stdout.write("Shutting down…\n");
+    await dashboard.close();
   });
 
 void program.parseAsync().catch((error: unknown) => {
