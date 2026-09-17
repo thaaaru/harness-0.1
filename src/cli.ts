@@ -435,7 +435,6 @@ async function withWorkflow<T>(
   const resolvedDatabasePath = resolve(databasePath);
   const repository = new RunRepository(resolvedDatabasePath);
   const workflow = new HarnessWorkflow({
-    databasePath: resolvedDatabasePath,
     repository,
     discoverer: new PlaywrightAppDiscoverer(),
   });

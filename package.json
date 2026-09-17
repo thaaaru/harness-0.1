@@ -35,9 +35,6 @@
     "registry": "https://npm.pkg.github.com"
   },
   "dependencies": {
-    "@langchain/core": "^1.2.11",
-    "@langchain/langgraph": "^1.4.15",
-    "@langchain/langgraph-checkpoint-sqlite": "^1.0.4",
     "better-sqlite3": "^13.0.3",
     "chrome-launcher": "^1.2.1",
     "commander": "^15.0.0",

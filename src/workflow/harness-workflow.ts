@@ -1,16 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 
-import { Annotation, Command, END, START, StateGraph, interrupt } from "@langchain/langgraph";
-import { SqliteSaver } from "@langchain/langgraph-checkpoint-sqlite";
-
 import { resolveGoal } from "../goal-presets.js";
 
 import {
   ApprovalDecisionSchema,
   HarnessRunInputSchema,
   type ApprovalDecision,
-  type ApprovalRequest,
   type AppSnapshot,
   type HarnessRunInput,
   type RunRecord,
@@ -29,19 +25,7 @@ import { runLighthouseAudit } from "../lighthouse/lighthouse-audit.js";
 import { HeuristicTestPlanner, type TestPlanner } from "../planning/heuristic-planner.js";
 import { RunRepository } from "../storage/run-repository.js";
 
-const HarnessState = Annotation.Root({
-  runId: Annotation<string>,
-  input: Annotation<HarnessRunInput>,
-  snapshot: Annotation<AppSnapshot | undefined>,
-  plan: Annotation<TestPlan | undefined>,
-  status: Annotation<RunStatus>,
-  approval: Annotation<ApprovalDecision | undefined>,
-});
-
-type WorkflowState = typeof HarnessState.State;
-
 export type HarnessWorkflowDependencies = {
-  databasePath: string;
   repository: RunRepository;
   discoverer: AppDiscoverer;
   planner?: TestPlanner;
@@ -64,10 +48,18 @@ export type ExecutionOptions = {
   onCheckComplete?: (check: NavigationCheck) => void;
 };
 
+const DISCOVER_MAX_ATTEMPTS = 2;
+
+/**
+ * Runs discover -> plan -> (pause for approval) -> finish as a plain
+ * sequence of calls against RunRepository, which is the single source of
+ * truth for run state. There is no separate orchestration engine or
+ * checkpoint store: every step below persists its own state transition
+ * directly, and approve()/reject() resume purely by reading the persisted
+ * run back out of the repository.
+ */
 export class HarnessWorkflow {
   private readonly planner: TestPlanner;
-  private readonly checkpointer: SqliteSaver;
-  private readonly graph: ReturnType<typeof createGraph>;
   private readonly executor: NavigationExecutor;
   private readonly lighthouseAuditor: typeof runLighthouseAudit;
 
@@ -75,8 +67,6 @@ export class HarnessWorkflow {
     this.planner = dependencies.planner ?? new HeuristicTestPlanner();
     this.executor = dependencies.executor ?? new PlaywrightNavigationExecutor();
     this.lighthouseAuditor = dependencies.lighthouseAuditor ?? runLighthouseAudit;
-    this.checkpointer = SqliteSaver.fromConnString(dependencies.databasePath);
-    this.graph = createGraph(this);
   }
 
   async start(rawInput: unknown): Promise<WorkflowResult> {
@@ -97,11 +87,9 @@ export class HarnessWorkflow {
     );
 
     try {
-      const result = await this.graph.invoke(
-        { runId, input, status: "discovering" },
-        { configurable: { thread_id: runId } },
-      );
-      return toWorkflowResult(result);
+      const snapshot = await this.discover(runId, input);
+      const plan = await this.plan(runId, input, snapshot);
+      return { runId, status: "awaiting_approval", plan, snapshot };
     } catch (error) {
       this.markFailed(runId, error);
       throw error;
@@ -122,7 +110,7 @@ export class HarnessWorkflow {
       note,
       decidedAt: new Date().toISOString(),
     });
-    return this.resume(runId, approval);
+    return this.finalizeApproval(runId, approval);
   }
 
   async reject(runId: string, approver: string, note?: string): Promise<WorkflowResult> {
@@ -139,7 +127,7 @@ export class HarnessWorkflow {
       note,
       decidedAt: new Date().toISOString(),
     });
-    return this.resume(runId, approval);
+    return this.finalizeApproval(runId, approval);
   }
 
   async execute(runId: string, options: ExecutionOptions = {}): Promise<WorkflowResult> {
@@ -231,83 +219,71 @@ export class HarnessWorkflow {
   }
 
   close(): void {
-    this.checkpointer.db.close();
+    // No separate engine/checkpoint store to close — RunRepository owns
+    // the only database connection, closed independently by the caller.
   }
 
-  private async discover(state: WorkflowState): Promise<Partial<WorkflowState>> {
+  private async discover(runId: string, input: HarnessRunInput): Promise<AppSnapshot> {
     const now = new Date().toISOString();
-    this.dependencies.repository.updateStatus(state.runId, "discovering", now);
+    this.dependencies.repository.updateStatus(runId, "discovering", now);
 
-    const snapshot = await this.dependencies.discoverer.discover({
-      runId: state.runId,
-      targetUrl: state.input.targetUrl,
-      policy: state.input.policy,
-      artifactsDirectory: state.input.artifactsDirectory,
-      storageStatePath: state.input.storageStatePath,
-      headless: state.input.headless,
-    });
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= DISCOVER_MAX_ATTEMPTS; attempt += 1) {
+      try {
+        const snapshot = await this.dependencies.discoverer.discover({
+          runId,
+          targetUrl: input.targetUrl,
+          policy: input.policy,
+          artifactsDirectory: input.artifactsDirectory,
+          storageStatePath: input.storageStatePath,
+          headless: input.headless,
+        });
 
-    this.dependencies.repository.saveSnapshot(state.runId, snapshot, new Date().toISOString());
-    this.dependencies.repository.appendEvent(
-      state.runId,
-      "app_discovered",
-      { pageCount: snapshot.pages.length, warningCount: snapshot.warnings.length },
-      new Date().toISOString(),
-    );
-    this.dependencies.repository.updateStatus(state.runId, "planning", new Date().toISOString());
-
-    return { snapshot, status: "planning" };
-  }
-
-  private async plan(state: WorkflowState): Promise<Partial<WorkflowState>> {
-    if (!state.snapshot) {
-      throw new Error("Cannot plan without an app snapshot.");
+        this.dependencies.repository.saveSnapshot(runId, snapshot, new Date().toISOString());
+        this.dependencies.repository.appendEvent(
+          runId,
+          "app_discovered",
+          { pageCount: snapshot.pages.length, warningCount: snapshot.warnings.length },
+          new Date().toISOString(),
+        );
+        this.dependencies.repository.updateStatus(runId, "planning", new Date().toISOString());
+        return snapshot;
+      } catch (error) {
+        lastError = error;
+      }
     }
+    throw lastError;
+  }
 
-    const plan = await this.planner.createPlan({
-      runId: state.runId,
-      goal: state.input.goal,
-      snapshot: state.snapshot,
-    });
+  private async plan(runId: string, input: HarnessRunInput, snapshot: AppSnapshot): Promise<TestPlan> {
+    const plan = await this.planner.createPlan({ runId, goal: input.goal, snapshot });
     const now = new Date().toISOString();
-    this.dependencies.repository.savePlan(state.runId, plan, now);
-    this.dependencies.repository.updateStatus(state.runId, "awaiting_approval", now);
+    this.dependencies.repository.savePlan(runId, plan, now);
+    this.dependencies.repository.updateStatus(runId, "awaiting_approval", now);
     this.dependencies.repository.appendEvent(
-      state.runId,
+      runId,
       "plan_ready_for_approval",
       { planId: plan.id, stepCount: plan.steps.length },
       now,
     );
-
-    return { plan, status: "awaiting_approval" };
+    return plan;
   }
 
-  private async requestApproval(state: WorkflowState): Promise<Partial<WorkflowState>> {
-    if (!state.plan) {
-      throw new Error("Cannot request approval without a test plan.");
-    }
-
-    const request: ApprovalRequest = { type: "test_plan_approval", runId: state.runId, plan: state.plan };
-    const approval = ApprovalDecisionSchema.parse(interrupt<ApprovalRequest, ApprovalDecision>(request));
-    const now = new Date().toISOString();
-
-    this.dependencies.repository.saveApproval(state.runId, approval, now);
+  private finalizeApproval(runId: string, approval: ApprovalDecision): WorkflowResult {
+    let now = new Date().toISOString();
+    this.dependencies.repository.saveApproval(runId, approval, now);
     this.dependencies.repository.appendEvent(
-      state.runId,
+      runId,
       approval.decision === "approved" ? "plan_approved" : "plan_rejected",
       { approver: approval.approver, note: approval.note },
       now,
     );
 
-    return { approval, status: approval.decision === "approved" ? "ready_to_execute" : "rejected" };
-  }
-
-  private async finish(state: WorkflowState): Promise<Partial<WorkflowState>> {
-    const status = state.approval?.decision === "approved" ? "ready_to_execute" : "rejected";
-    const now = new Date().toISOString();
-    this.dependencies.repository.updateStatus(state.runId, status, now);
+    const status: RunStatus = approval.decision === "approved" ? "ready_to_execute" : "rejected";
+    now = new Date().toISOString();
+    this.dependencies.repository.updateStatus(runId, status, now);
     this.dependencies.repository.appendEvent(
-      state.runId,
+      runId,
       status === "ready_to_execute" ? "execution_available" : "run_closed",
       status === "ready_to_execute"
         ? { reason: "The approved plan is ready for constrained read-only navigation execution." }
@@ -315,19 +291,12 @@ export class HarnessWorkflow {
       now,
     );
 
-    return { status };
-  }
-
-  private async resume(runId: string, approval: ApprovalDecision): Promise<WorkflowResult> {
-    try {
-      const result = await this.graph.invoke(new Command({ resume: approval }), {
-        configurable: { thread_id: runId },
-      });
-      return toWorkflowResult(result);
-    } catch (error) {
-      this.markFailed(runId, error);
-      throw error;
-    }
+    return {
+      runId,
+      status,
+      plan: this.dependencies.repository.getPlan(runId),
+      snapshot: this.dependencies.repository.getSnapshot(runId),
+    };
   }
 
   private markFailed(runId: string, error: unknown): void {
@@ -336,27 +305,4 @@ export class HarnessWorkflow {
     this.dependencies.repository.updateStatus(runId, "failed", now);
     this.dependencies.repository.appendEvent(runId, "run_failed", { message }, now);
   }
-}
-
-function createGraph(workflow: HarnessWorkflow) {
-  return new StateGraph(HarnessState)
-    .addNode("discover", workflow["discover"].bind(workflow), { retryPolicy: { maxAttempts: 2 } })
-    .addNode("create_plan", workflow["plan"].bind(workflow))
-    .addNode("request_approval", workflow["requestApproval"].bind(workflow))
-    .addNode("finish", workflow["finish"].bind(workflow))
-    .addEdge(START, "discover")
-    .addEdge("discover", "create_plan")
-    .addEdge("create_plan", "request_approval")
-    .addEdge("request_approval", "finish")
-    .addEdge("finish", END)
-    .compile({ checkpointer: workflow["checkpointer"] });
-}
-
-function toWorkflowResult(state: WorkflowState): WorkflowResult {
-  return {
-    runId: state.runId,
-    status: state.status,
-    plan: state.plan,
-    snapshot: state.snapshot,
-  };
 }

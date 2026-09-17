@@ -111,7 +111,6 @@ describe("HarnessWorkflow", () => {
     const discoverer = new FakeDiscoverer();
     const executor = new FakeNavigationExecutor();
     const workflow = new HarnessWorkflow({
-      databasePath,
       repository,
       discoverer,
       executor,
@@ -161,7 +160,6 @@ describe("HarnessWorkflow", () => {
     const discoverer = new FakeDiscoverer();
     const executor = new ThrowOnceNavigationExecutor();
     const workflow = new HarnessWorkflow({
-      databasePath,
       repository,
       discoverer,
       executor,
@@ -200,7 +198,6 @@ describe("HarnessWorkflow", () => {
     const discoverer = new FakeDiscoverer();
     const executor = new FakeNavigationExecutor();
     const workflow = new HarnessWorkflow({
-      databasePath,
       repository,
       discoverer,
       executor,

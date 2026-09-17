@@ -45,7 +45,6 @@ export async function startDashboardServer(options: DashboardServerOptions): Pro
   const repository = new RunRepository(databasePath);
   const projectRepository = new ProjectRepository(databasePath);
   const workflow = new HarnessWorkflow({
-    databasePath,
     repository,
     discoverer: new PlaywrightAppDiscoverer(),
   });
