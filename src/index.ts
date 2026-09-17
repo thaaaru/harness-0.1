@@ -10,5 +10,6 @@ export * from "./reporting/report.js";
 export * from "./review/browser.js";
 export * from "./review/review-html.js";
 export * from "./review/review-server.js";
+export * from "./storage/project-repository.js";
 export * from "./storage/run-repository.js";
 export * from "./workflow/harness-workflow.js";

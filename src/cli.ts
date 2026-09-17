@@ -1,11 +1,14 @@
 #!/usr/bin/env node
 
 import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { dirname, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { Command } from "commander";
 import { config as loadDotenv } from "dotenv";
 
+import { ArtifactSchema } from "./domain.js";
 import { WEB_APP_BASELINE_PRESET } from "./goal-presets.js";
 
 import { loadBrandConfig } from "./brand.js";
@@ -14,6 +17,7 @@ import { activateLicense, reportUsageEvent, requireValidLicense } from "./licens
 import { LicenseError, type LicensePayload } from "./licensing/verify-license.js";
 import { writeReportFiles } from "./reporting/report.js";
 import { runInteractiveReview } from "./review/review-server.js";
+import { ProjectNotFoundError, ProjectRepository } from "./storage/project-repository.js";
 import { RunRepository } from "./storage/run-repository.js";
 import { HarnessWorkflow, type WorkflowResult } from "./workflow/harness-workflow.js";
 
@@ -56,10 +60,18 @@ program
   .option("--artifacts <path>", "artifact directory", "artifacts")
   .option("--headless <boolean>", "run Chromium headlessly (true or false)", parseBoolean, true)
   .option("--json", "print raw JSON instead of opening an interactive browser review", false)
+  .option("--project <projectId>", "link this run to a project")
   .action(async (options) => {
+    if (options.project) {
+      await withProjectRepository(options.database, async (repository) => {
+        repository.getProject(options.project);
+      });
+    }
+
     await withWorkflow(options.database, async (workflow, license) => {
       const result = await workflow.start({
         targetUrl: options.url,
+        projectId: options.project,
         goal: options.goal,
         artifactsDirectory: resolve(options.artifacts),
         headless: options.headless,
@@ -97,6 +109,114 @@ program
         onStatus: (message) => process.stdout.write(`${message}\n`),
       });
       process.stdout.write("Done.\n");
+    });
+  });
+
+const project = program.command("project").description("Manage reusable test projects.");
+
+project
+  .command("create")
+  .description("Create a reusable test project.")
+  .requiredOption("--name <name>", "project name")
+  .option("--url <url>", "application URL")
+  .option("--database <path>", "SQLite database path", "data/harness.sqlite")
+  .action(async (options) => {
+    await withProjectRepository(options.database, async (repository) => {
+      printJson(
+        repository.createProject({
+          id: randomUUID(),
+          name: options.name,
+          targetUrl: options.url,
+          createdAt: new Date().toISOString(),
+        }),
+      );
+    });
+  });
+
+project
+  .command("list")
+  .description("List reusable test projects.")
+  .option("--database <path>", "SQLite database path", "data/harness.sqlite")
+  .action(async (options) => {
+    await withProjectRepository(options.database, async (repository) => {
+      printJson(repository.listProjects());
+    });
+  });
+
+project
+  .command("show <projectId>")
+  .description("Show a reusable test project.")
+  .option("--database <path>", "SQLite database path", "data/harness.sqlite")
+  .action(async (projectId, options) => {
+    await withProjectRepository(options.database, async (repository) => {
+      printJson(repository.getProject(projectId));
+    });
+  });
+
+const artifact = program.command("artifact").description("Manage project artifacts.");
+
+artifact
+  .command("add <projectId>")
+  .description("Add a Markdown artifact to a project.")
+  .requiredOption("--type <type>", "artifact type")
+  .requiredOption("--title <title>", "artifact title")
+  .requiredOption("--file <path>", "Markdown source file")
+  .option("--database <path>", "SQLite database path", "data/harness.sqlite")
+  .action(async (projectId, options) => {
+    await withProjectRepository(options.database, async (repository) => {
+      repository.getProject(projectId);
+      const sourcePath = resolve(options.file);
+      let content: string;
+      try {
+        content = readFileSync(sourcePath, "utf8");
+      } catch {
+        throw new Error(`Artifact file not found: ${sourcePath}`);
+      }
+
+      if (!sourcePath.endsWith(".md")) {
+        throw new Error("Artifact file must be a Markdown (.md) file.");
+      }
+
+      const now = new Date().toISOString();
+      const id = randomUUID();
+      const filePath = join("projects", projectId, "artifacts", `${id}-${toSlug(options.title)}.md`);
+      const artifact = ArtifactSchema.parse({
+        id,
+        projectId,
+        type: options.type,
+        title: options.title,
+        filePath,
+        createdAt: now,
+        updatedAt: now,
+      });
+      mkdirSync(dirname(resolve(filePath)), { recursive: true });
+      writeFileSync(
+        resolve(filePath),
+        `---\ntitle: ${JSON.stringify(artifact.title)}\ntype: ${artifact.type}\ncreatedAt: ${now}\nupdatedAt: ${now}\n---\n\n${content}`,
+      );
+      printJson(repository.createArtifact(artifact));
+    });
+  });
+
+artifact
+  .command("list <projectId>")
+  .description("List a project's artifacts.")
+  .option("--type <type>", "filter by artifact type")
+  .option("--database <path>", "SQLite database path", "data/harness.sqlite")
+  .action(async (projectId, options) => {
+    await withProjectRepository(options.database, async (repository) => {
+      repository.getProject(projectId);
+      printJson(repository.listArtifacts(projectId, options.type));
+    });
+  });
+
+artifact
+  .command("show <artifactId>")
+  .description("Show an artifact.")
+  .option("--database <path>", "SQLite database path", "data/harness.sqlite")
+  .action(async (artifactId, options) => {
+    await withProjectRepository(options.database, async (repository) => {
+      printJson(repository.getArtifact(artifactId));
     });
   });
 
@@ -180,7 +300,7 @@ program
   });
 
 void program.parseAsync().catch((error: unknown) => {
-  if (error instanceof LicenseError) {
+  if (error instanceof LicenseError || error instanceof ProjectNotFoundError) {
     process.stderr.write(`${error.message}\n`);
     process.exitCode = 1;
     return;
@@ -198,6 +318,20 @@ async function withLicenseErrorHandling(action: () => Promise<void>): Promise<vo
       return;
     }
     throw error;
+  }
+}
+
+async function withProjectRepository<T>(
+  databasePath: string,
+  action: (repository: ProjectRepository) => Promise<T>,
+): Promise<T> {
+  await requireValidLicense();
+
+  const repository = new ProjectRepository(resolve(databasePath));
+  try {
+    return await action(repository);
+  } finally {
+    repository.close();
   }
 }
 
@@ -263,7 +397,21 @@ async function installChromium(): Promise<void> {
 }
 
 function printResult(result: WorkflowResult): void {
-  process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+  printJson(result);
+}
+
+function printJson(value: unknown): void {
+  process.stdout.write(`${JSON.stringify(value, null, 2)}\n`);
+}
+
+function toSlug(value: string): string {
+  return (
+    value
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "artifact"
+  );
 }
 
 function printNextSteps(commands: string[]): void {

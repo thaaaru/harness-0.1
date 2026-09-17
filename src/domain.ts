@@ -2,6 +2,35 @@ import { z } from "zod";
 
 import { WEB_APP_BASELINE_PRESET } from "./goal-presets.js";
 
+export const ProjectSchema = z.object({
+  id: z.string().uuid(),
+  name: z.string().trim().min(1).max(200),
+  targetUrl: z.string().url().optional(),
+  createdAt: z.string().datetime(),
+});
+export type Project = z.infer<typeof ProjectSchema>;
+
+export const ArtifactTypeSchema = z.enum([
+  "requirements",
+  "test-spec",
+  "use-case",
+  "api-spec",
+  "generated-test-plan",
+  "other",
+]);
+export type ArtifactType = z.infer<typeof ArtifactTypeSchema>;
+
+export const ArtifactSchema = z.object({
+  id: z.string().uuid(),
+  projectId: z.string().uuid(),
+  type: ArtifactTypeSchema,
+  title: z.string().trim().min(1).max(200),
+  filePath: z.string(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+export type Artifact = z.infer<typeof ArtifactSchema>;
+
 export const RunStatusSchema = z.enum([
   "discovering",
   "planning",
@@ -75,6 +104,7 @@ export type TargetPolicy = z.infer<typeof TargetPolicySchema>;
 
 export const HarnessRunInputSchema = z.object({
   targetUrl: z.string().url(),
+  projectId: z.string().uuid().optional(),
   goal: z.string().trim().min(5).max(2_000).default(WEB_APP_BASELINE_PRESET),
   policy: TargetPolicySchema.default({
     allowedOrigins: [],
