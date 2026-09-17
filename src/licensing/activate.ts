@@ -45,8 +45,11 @@ export function loadStoredLicense(): StoredLicense | undefined {
 
   try {
     return JSON.parse(readFileSync(licensePath(), "utf8")) as StoredLicense;
-  } catch {
-    return undefined;
+  } catch (error) {
+    throw new LicenseError(
+      `Nova license file at ${licensePath()} is corrupt or unreadable (${(error as Error).message}). ` +
+        "Run `nova license activate <key>` again to replace it.",
+    );
   }
 }
 
