@@ -22,7 +22,10 @@ import {
   type NavigationExecutor,
 } from "../execution/public-navigation-executor.js";
 import { runLighthouseAudit } from "../lighthouse/lighthouse-audit.js";
+import { captureKnowledge } from "../knowledge/learning-agent.js";
+import { summarizeRunForKnowledge } from "../knowledge/openai-summarizer.js";
 import { HeuristicTestPlanner, type TestPlanner } from "../planning/heuristic-planner.js";
+import type { KnowledgeRepository } from "../storage/knowledge-repository.js";
 import { RunRepository } from "../storage/run-repository.js";
 
 export type HarnessWorkflowDependencies = {
@@ -32,6 +35,10 @@ export type HarnessWorkflowDependencies = {
   executor?: NavigationExecutor;
   /** Injectable for tests — defaults to the real runLighthouseAudit. */
   lighthouseAuditor?: typeof runLighthouseAudit;
+  /** Optional: when set, every terminal run state triggers a best-effort knowledge capture. */
+  knowledgeRepository?: KnowledgeRepository;
+  /** Injectable for tests — defaults to the real OpenAI-backed summarizer. */
+  summarizeRun?: typeof summarizeRunForKnowledge;
 };
 
 export type WorkflowResult = {
@@ -91,7 +98,7 @@ export class HarnessWorkflow {
       const plan = await this.plan(runId, input, snapshot);
       return { runId, status: "awaiting_approval", plan, snapshot };
     } catch (error) {
-      this.markFailed(runId, error);
+      await this.markFailed(runId, error);
       throw error;
     }
   }
@@ -190,15 +197,28 @@ export class HarnessWorkflow {
         completedAt,
       );
 
+      const plan = this.dependencies.repository.getPlan(runId);
+      await this.recordKnowledge(runId, "completed", {
+        targetUrl: run.input.targetUrl,
+        goal: run.input.goal,
+        discoveredRoutes: plan?.discoveredRoutes,
+        planSummary: plan?.summary,
+        checks: execution.checks.map((check) => ({
+          url: check.url,
+          status: check.status,
+          error: check.error,
+        })),
+      });
+
       return {
         runId,
         status: execution.status,
-        plan: this.dependencies.repository.getPlan(runId),
+        plan,
         snapshot,
         execution,
       };
     } catch (error) {
-      this.markFailed(runId, error);
+      await this.markFailed(runId, error);
       throw error;
     }
   }
@@ -299,10 +319,69 @@ export class HarnessWorkflow {
     };
   }
 
-  private markFailed(runId: string, error: unknown): void {
+  private async markFailed(runId: string, error: unknown): Promise<void> {
     const now = new Date().toISOString();
     const message = error instanceof Error ? error.message : String(error);
     this.dependencies.repository.updateStatus(runId, "failed", now);
     this.dependencies.repository.appendEvent(runId, "run_failed", { message }, now);
+
+    const run = this.dependencies.repository.getRun(runId);
+    const plan = this.dependencies.repository.getPlan(runId);
+    const snapshot = this.dependencies.repository.getSnapshot(runId);
+    await this.recordKnowledge(runId, "failed", {
+      targetUrl: run.input.targetUrl,
+      goal: run.input.goal,
+      discoveredRoutes: plan?.discoveredRoutes,
+      discoveryWarnings: snapshot?.warnings,
+      planSummary: plan?.summary,
+      errorMessage: message,
+    });
+  }
+
+  /**
+   * Best-effort: never throws, never blocks the run's own status. Silently
+   * a no-op when no knowledgeRepository was configured (the default).
+   */
+  private async recordKnowledge(
+    runId: string,
+    outcome: "completed" | "failed",
+    context: Omit<Parameters<typeof captureKnowledge>[2], "outcome">,
+  ): Promise<void> {
+    const { knowledgeRepository } = this.dependencies;
+    if (!knowledgeRepository) {
+      return;
+    }
+
+    try {
+      const result = await captureKnowledge(
+        knowledgeRepository,
+        runId,
+        { ...context, outcome },
+        this.dependencies.summarizeRun,
+      );
+      const now = new Date().toISOString();
+      if ("skippedReason" in result) {
+        this.dependencies.repository.appendEvent(
+          runId,
+          "knowledge_capture_skipped",
+          { reason: result.skippedReason, detail: result.detail },
+          now,
+        );
+      } else if (result.captured > 0) {
+        this.dependencies.repository.appendEvent(
+          runId,
+          "knowledge_captured",
+          { count: result.captured },
+          now,
+        );
+      }
+    } catch (error) {
+      this.dependencies.repository.appendEvent(
+        runId,
+        "knowledge_capture_skipped",
+        { reason: "unexpected_error", detail: error instanceof Error ? error.message : String(error) },
+        new Date().toISOString(),
+      );
+    }
   }
 }

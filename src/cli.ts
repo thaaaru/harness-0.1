@@ -23,6 +23,7 @@ import { writeReportFiles } from "./reporting/report.js";
 import { runInteractiveReview } from "./review/review-server.js";
 import { openInBrowser } from "./review/browser.js";
 import { startDashboardServer } from "./serve/dashboard-server.js";
+import { KnowledgeRepository } from "./storage/knowledge-repository.js";
 import { ProjectNotFoundError, ProjectRepository } from "./storage/project-repository.js";
 import { RunRepository } from "./storage/run-repository.js";
 import { HarnessWorkflow, type WorkflowResult } from "./workflow/harness-workflow.js";
@@ -62,6 +63,7 @@ program
   .option("--max-pages <count>", "maximum routes to inspect", parsePositiveInteger, 10)
   .option("--allow-insecure-http", "permit HTTP for a local or isolated test environment", false)
   .option("--database <path>", "SQLite database path", "data/harness.sqlite")
+  .option("--knowledge-database <path>", "SQLite knowledge-base path", "data/knowledge.sqlite")
   .option("--artifacts <path>", "artifact directory", "artifacts")
   .option("--headless <boolean>", "run Chromium headlessly (true or false)", parseBoolean, true)
   .option("--json", "print raw JSON instead of opening an interactive browser review", false)
@@ -75,7 +77,7 @@ program
     }
 
     const artifactsDirectory = resolve(options.artifacts);
-    await withWorkflow(options.database, async (workflow) => {
+    await withWorkflow(options.database, options.knowledgeDatabase, async (workflow) => {
       const result = await workflow.start({
         targetUrl: options.url,
         projectId: options.project,
@@ -272,8 +274,9 @@ program
   .option("--approver <name>", "approval actor", "local-operator")
   .option("--note <note>", "approval note")
   .option("--database <path>", "SQLite database path", "data/harness.sqlite")
+  .option("--knowledge-database <path>", "SQLite knowledge-base path", "data/knowledge.sqlite")
   .action(async (runId, options) => {
-    await withWorkflow(options.database, async (workflow) => {
+    await withWorkflow(options.database, options.knowledgeDatabase, async (workflow) => {
       const result = await workflow.approve(runId, options.approver, options.note);
       printResult(result);
       if (result.status === "ready_to_execute") {
@@ -288,8 +291,9 @@ program
   .option("--approver <name>", "approval actor", "local-operator")
   .option("--note <note>", "rejection note")
   .option("--database <path>", "SQLite database path", "data/harness.sqlite")
+  .option("--knowledge-database <path>", "SQLite knowledge-base path", "data/knowledge.sqlite")
   .action(async (runId, options) => {
-    await withWorkflow(options.database, async (workflow) => {
+    await withWorkflow(options.database, options.knowledgeDatabase, async (workflow) => {
       printResult(await workflow.reject(runId, options.approver, options.note));
     });
   });
@@ -298,13 +302,14 @@ program
   .command("execute <runId>")
   .description("Execute the approved plan using only constrained read-only GET navigation and assertions.")
   .option("--database <path>", "SQLite database path", "data/harness.sqlite")
+  .option("--knowledge-database <path>", "SQLite knowledge-base path", "data/knowledge.sqlite")
   .option(
     "--headless <boolean>",
     "override the run's Chromium headless setting (true or false)",
     parseBoolean,
   )
   .action(async (runId, options) => {
-    await withWorkflow(options.database, async (workflow) => {
+    await withWorkflow(options.database, options.knowledgeDatabase, async (workflow) => {
       const result = await workflow.execute(runId, { headless: options.headless });
       printResult(result);
       if (result.status === "passed" || result.status === "failed") {
@@ -338,8 +343,9 @@ program
   .command("status <runId>")
   .description("Show a run, its app snapshot, test plan, and any execution result.")
   .option("--database <path>", "SQLite database path", "data/harness.sqlite")
+  .option("--knowledge-database <path>", "SQLite knowledge-base path", "data/knowledge.sqlite")
   .action(async (runId, options) => {
-    await withWorkflow(options.database, async (workflow) => {
+    await withWorkflow(options.database, options.knowledgeDatabase, async (workflow) => {
       printResult(workflow.getResult(runId));
     });
   });
@@ -348,14 +354,59 @@ program
   .command("report <runId>")
   .description("Generate a branded HTML and PDF report for a run.")
   .option("--database <path>", "SQLite database path", "data/harness.sqlite")
+  .option("--knowledge-database <path>", "SQLite knowledge-base path", "data/knowledge.sqlite")
   .option("--output <dir>", "output directory", "")
   .action(async (runId, options) => {
-    await withWorkflow(options.database, async (workflow) => {
+    await withWorkflow(options.database, options.knowledgeDatabase, async (workflow) => {
       const result = workflow.getResult(runId);
       const run = workflow.getRun(runId);
       const outputDir = resolve(options.output || runArtifactsDirectory(run.input.artifactsDirectory, runId));
       const { htmlPath, pdfPath } = await writeReportFiles(result, brand, outputDir);
       process.stdout.write(`${JSON.stringify({ html: htmlPath, pdf: pdfPath }, null, 2)}\n`);
+    });
+  });
+
+const knowledge = program
+  .command("knowledge")
+  .description("Browse and search the accumulated knowledge base.");
+
+knowledge
+  .command("list")
+  .description("List captured knowledge entries, most recent first.")
+  .option("--category <category>", "filter by category (domain_knowledge, failure, solution)")
+  .option("--target <url>", "filter by target URL")
+  .option("--limit <count>", "maximum entries to return", parsePositiveInteger, 50)
+  .option("--knowledge-database <path>", "SQLite knowledge-base path", "data/knowledge.sqlite")
+  .action(async (options) => {
+    await withKnowledgeRepository(options.knowledgeDatabase, async (repository) => {
+      printJson(
+        repository.list({
+          category: options.category,
+          targetUrl: options.target,
+          limit: options.limit,
+        }),
+      );
+    });
+  });
+
+knowledge
+  .command("search <query>")
+  .description("Search knowledge entries by title, summary, detail, or tag.")
+  .option("--limit <count>", "maximum entries to return", parsePositiveInteger, 50)
+  .option("--knowledge-database <path>", "SQLite knowledge-base path", "data/knowledge.sqlite")
+  .action(async (query, options) => {
+    await withKnowledgeRepository(options.knowledgeDatabase, async (repository) => {
+      printJson(repository.search(query, options.limit));
+    });
+  });
+
+knowledge
+  .command("show <entryId>")
+  .description("Show a single knowledge entry.")
+  .option("--knowledge-database <path>", "SQLite knowledge-base path", "data/knowledge.sqlite")
+  .action(async (entryId, options) => {
+    await withKnowledgeRepository(options.knowledgeDatabase, async (repository) => {
+      printJson(repository.getEntry(entryId));
     });
   });
 
@@ -365,12 +416,14 @@ program
     "Run a persistent local dashboard: start scans, capture logins, and review/approve/execute/report from your browser.",
   )
   .option("--database <path>", "SQLite database path", "data/harness.sqlite")
+  .option("--knowledge-database <path>", "SQLite knowledge-base path", "data/knowledge.sqlite")
   .option("--artifacts <path>", "artifact directory", "artifacts")
   .option("--port <port>", "port to listen on (default: pick any free port)", parsePositiveInteger)
   .action(async (options) => {
     await requireValidLicense();
     const dashboard = await startDashboardServer({
       databasePath: resolve(options.database),
+      knowledgeDatabasePath: resolve(options.knowledgeDatabase),
       artifactsDirectory: resolve(options.artifacts),
       brand,
       port: options.port,
@@ -428,21 +481,39 @@ async function withProjectRepository<T>(
 
 async function withWorkflow<T>(
   databasePath: string,
+  knowledgeDatabasePath: string,
   action: (workflow: HarnessWorkflow) => Promise<T>,
 ): Promise<T> {
   await requireValidLicense();
 
   const resolvedDatabasePath = resolve(databasePath);
   const repository = new RunRepository(resolvedDatabasePath);
+  const knowledgeRepository = new KnowledgeRepository(resolve(knowledgeDatabasePath));
   const workflow = new HarnessWorkflow({
     repository,
     discoverer: new PlaywrightAppDiscoverer(),
+    knowledgeRepository,
   });
 
   try {
     return await action(workflow);
   } finally {
     workflow.close();
+    repository.close();
+    knowledgeRepository.close();
+  }
+}
+
+async function withKnowledgeRepository<T>(
+  knowledgeDatabasePath: string,
+  action: (repository: KnowledgeRepository) => Promise<T>,
+): Promise<T> {
+  await requireValidLicense();
+
+  const repository = new KnowledgeRepository(resolve(knowledgeDatabasePath));
+  try {
+    return await action(repository);
+  } finally {
     repository.close();
   }
 }

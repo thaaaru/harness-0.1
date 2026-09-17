@@ -261,3 +261,28 @@ export const RunRecordSchema = z.object({
   approval: ApprovalDecisionSchema.optional(),
 });
 export type RunRecord = z.infer<typeof RunRecordSchema>;
+
+export const KnowledgeCategorySchema = z.enum(["domain_knowledge", "failure", "solution"]);
+export type KnowledgeCategory = z.infer<typeof KnowledgeCategorySchema>;
+
+export const KnowledgeDraftEntrySchema = z.object({
+  category: KnowledgeCategorySchema,
+  title: z.string().trim().min(1).max(200),
+  summary: z.string().trim().min(1).max(500),
+  detail: z.string().trim().min(1).max(4_000),
+  tags: z.array(z.string().trim().min(1)).max(20).default([]),
+});
+export type KnowledgeDraftEntry = z.infer<typeof KnowledgeDraftEntrySchema>;
+
+export const KnowledgeDraftSchema = z.object({
+  entries: z.array(KnowledgeDraftEntrySchema),
+});
+export type KnowledgeDraft = z.infer<typeof KnowledgeDraftSchema>;
+
+export const KnowledgeEntrySchema = KnowledgeDraftEntrySchema.extend({
+  id: z.string().uuid(),
+  runId: z.string().uuid(),
+  targetUrl: z.string().url(),
+  createdAt: z.string().datetime(),
+});
+export type KnowledgeEntry = z.infer<typeof KnowledgeEntrySchema>;

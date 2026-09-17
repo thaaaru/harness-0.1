@@ -84,7 +84,7 @@ nova reject <run-id> --approver "Tharaka" --note "Adjust the proposed flow"
 
 `--headless` defaults to `true` during discovery and is persisted with the run. Pass `--headless false` to watch discovery and its later execution; execution may override it with the same flag.
 
-All run state, execution results, and LangGraph checkpoints live in `data/harness.sqlite`; screenshots are stored under `artifacts/<run-id>/`.
+All run state and execution results live in `data/harness.sqlite`; screenshots are stored under `artifacts/<run-id>/`.
 
 ### Authenticated scans
 
@@ -127,6 +127,22 @@ scans](#authenticated-scans)). It binds to `127.0.0.1` only and stops with
 Ctrl+C. All the same [Safety boundaries](#safety-boundaries) apply — the
 dashboard is a UI over the same governed workflow, not a new capability.
 
+### Knowledge base
+
+Every run — completed or failed — triggers a best-effort attempt to extract durable knowledge (domain facts, known failures, known fixes) into a separate `data/knowledge.sqlite` database. This is entirely opt-in on cost: set `OPENAI_API_KEY` (and optionally `OPENAI_MODEL`, default `gpt-4o-mini`) to enable it. Without a key, capture is silently skipped — a `knowledge_capture_skipped` run event is recorded, but the run itself is never blocked or slowed by a missing key or a failed API call.
+
+```bash
+export OPENAI_API_KEY=sk-...
+nova discover --url https://staging.example.test
+# ...approve, execute...
+
+nova knowledge list
+nova knowledge search "checkout"
+nova knowledge show <entry-id>
+```
+
+Nothing currently reads the knowledge base back into planning or execution — it is pure accumulated record for a human to browse and search.
+
 ## Commands
 
 ```bash
@@ -139,10 +155,10 @@ pnpm format:check
 
 ## Architecture
 
-- **LangGraph.js** — durable Discover → Plan → Approval workflow
-- **SQLite** — run records, app snapshots, plans, execution results, audit events, and LangGraph checkpoints
+- **SQLite** — run records, app snapshots, plans, execution results, and audit events (`data/harness.sqlite`); a separate knowledge base of captured domain knowledge, failures, and solutions (`data/knowledge.sqlite`)
 - **Playwright** — read-only app discovery, constrained `GET` navigation assertions, and evidence capture
-- **Zod** — validated run, policy, snapshot, plan, and approval schemas
+- **Zod** — validated run, policy, snapshot, plan, approval, and knowledge schemas
+- **OpenAI (optional)** — best-effort post-run knowledge extraction; only called when `OPENAI_API_KEY` is set
 
 ## Next milestone
 
