@@ -45,6 +45,14 @@ describe("RequirementsPlanService", () => {
     await expect(readFile(join(directory, result.artifact.filePath), "utf8")).resolves.toContain(
       "# Generated requirements test plan",
     );
+
+    const events = repository.listEvents(projectId);
+    const generated = events.find((event) => event.type === "requirements_plan_generated");
+    expect(generated?.payload).toMatchObject({ generatedArtifactId: result.artifact.id });
+    expect((generated?.payload.caseCount as number) >= 1).toBe(true);
+    expect((generated?.payload.coverage as Record<string, number>)["not-applicable"]).toBeGreaterThanOrEqual(
+      1,
+    );
   });
 
   it("rejects an artifact path outside the project artifact directory", async () => {
@@ -65,5 +73,9 @@ describe("RequirementsPlanService", () => {
     await expect(new RequirementsPlanService(repository, directory).generate({ projectId })).rejects.toThrow(
       "Artifact file path escapes the project artifact directory: outside.md",
     );
+
+    const events = repository.listEvents(projectId);
+    const failed = events.find((event) => event.type === "requirements_plan_generation_failed");
+    expect(failed?.payload.message).toContain("escapes the project artifact directory");
   });
 });

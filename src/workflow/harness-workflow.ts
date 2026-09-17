@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { existsSync } from "node:fs";
 
 import { Annotation, Command, END, START, StateGraph, interrupt } from "@langchain/langgraph";
 import { SqliteSaver } from "@langchain/langgraph-checkpoint-sqlite";
@@ -12,6 +13,7 @@ import {
   type ApprovalRequest,
   type AppSnapshot,
   type HarnessRunInput,
+  type RunRecord,
   type RunStatus,
   type ExecutionResult,
   type NavigationCheck,
@@ -80,6 +82,9 @@ export class HarnessWorkflow {
   async start(rawInput: unknown): Promise<WorkflowResult> {
     const parsedInput = HarnessRunInputSchema.parse(rawInput);
     const input = { ...parsedInput, goal: resolveGoal(parsedInput.goal).text };
+    if (input.storageStatePath && !existsSync(input.storageStatePath)) {
+      throw new Error(`Storage state file not found: ${input.storageStatePath}`);
+    }
     const runId = randomUUID();
     const now = new Date().toISOString();
 
@@ -139,13 +144,10 @@ export class HarnessWorkflow {
 
   async execute(runId: string, options: ExecutionOptions = {}): Promise<WorkflowResult> {
     const run = this.dependencies.repository.getRun(runId);
-    const retryingFailedExecution =
-      run.status === "failed" &&
-      run.approval?.decision === "approved" &&
-      this.dependencies.repository.getExecution(runId)?.status === "failed";
-    if (run.status !== "ready_to_execute" && !retryingFailedExecution) {
+    const retryingApprovedFailure = run.status === "failed" && run.approval?.decision === "approved";
+    if (run.status !== "ready_to_execute" && !retryingApprovedFailure) {
       throw new Error(
-        `Run ${runId} is ${run.status}; only approved ready or previously failed read-only runs can be executed.`,
+        `Run ${runId} is ${run.status}; only approved runs that are ready or previously failed can be executed.`,
       );
     }
 
@@ -176,6 +178,7 @@ export class HarnessWorkflow {
           snapshot,
           policy: run.input.policy,
           artifactsDirectory: run.input.artifactsDirectory,
+          storageStatePath: run.input.storageStatePath,
           headless,
           onCheckStart: options.onCheckStart,
           onCheckComplete: options.onCheckComplete,
@@ -223,6 +226,10 @@ export class HarnessWorkflow {
     };
   }
 
+  getRun(runId: string): RunRecord {
+    return this.dependencies.repository.getRun(runId);
+  }
+
   close(): void {
     this.checkpointer.db.close();
   }
@@ -236,6 +243,7 @@ export class HarnessWorkflow {
       targetUrl: state.input.targetUrl,
       policy: state.input.policy,
       artifactsDirectory: state.input.artifactsDirectory,
+      storageStatePath: state.input.storageStatePath,
       headless: state.input.headless,
     });
 

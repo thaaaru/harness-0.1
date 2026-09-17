@@ -43,35 +43,69 @@ export class RequirementsPlanService {
   ) {}
 
   async generate(input: GenerateRequirementsPlanInput): Promise<GeneratedRequirementsPlan> {
-    const project = this.repository.getProject(input.projectId);
-    const artifacts = this.loadArtifacts(project.id, input.artifactIds);
-    const plan = await this.generator.generate({
-      project,
-      artifacts,
-      runId: input.runId,
-      snapshot: input.snapshot,
-    });
-    const now = new Date().toISOString();
-    const artifactId = randomUUID();
-    const artifact = ArtifactSchema.parse({
-      id: artifactId,
-      projectId: project.id,
-      type: "generated-test-plan",
-      title: input.title ?? "Generated requirements test plan",
-      filePath: `projects/${project.id}/artifacts/${artifactId}-generated-requirements-test-plan.md`,
-      createdAt: now,
-      updatedAt: now,
-    });
-    const outputPath = this.resolveArtifactPath(project.id, artifact.filePath);
-    const temporaryPath = `${outputPath}.${randomUUID()}.tmp`;
-
-    mkdirSync(dirname(outputPath), { recursive: true });
-    writeFileSync(temporaryPath, renderRequirementsPlan(artifact, plan));
-    renameSync(temporaryPath, outputPath);
+    const startedAt = Date.now();
     try {
-      return { artifact: this.repository.createArtifact(artifact), plan };
+      const project = this.repository.getProject(input.projectId);
+      const artifacts = this.loadArtifacts(project.id, input.artifactIds);
+      const plan = await this.generator.generate({
+        project,
+        artifacts,
+        runId: input.runId,
+        snapshot: input.snapshot,
+      });
+      const now = new Date().toISOString();
+      const artifactId = randomUUID();
+      const artifact = ArtifactSchema.parse({
+        id: artifactId,
+        projectId: project.id,
+        type: "generated-test-plan",
+        title: input.title ?? "Generated requirements test plan",
+        filePath: `projects/${project.id}/artifacts/${artifactId}-generated-requirements-test-plan.md`,
+        createdAt: now,
+        updatedAt: now,
+      });
+      const outputPath = this.resolveArtifactPath(project.id, artifact.filePath);
+      const temporaryPath = `${outputPath}.${randomUUID()}.tmp`;
+
+      mkdirSync(dirname(outputPath), { recursive: true });
+      writeFileSync(temporaryPath, renderRequirementsPlan(artifact, plan));
+      renameSync(temporaryPath, outputPath);
+      let createdArtifact: Artifact;
+      try {
+        createdArtifact = this.repository.createArtifact(artifact);
+      } catch (error) {
+        unlinkSync(outputPath);
+        throw error;
+      }
+
+      this.repository.appendEvent(
+        input.projectId,
+        "requirements_plan_generated",
+        {
+          runId: input.runId,
+          artifactIds: plan.artifactIds,
+          generatedArtifactId: createdArtifact.id,
+          caseCount: plan.cases.length,
+          gapCount: plan.gaps.length,
+          coverage: countCoverage(plan.cases),
+          durationMs: Date.now() - startedAt,
+        },
+        now,
+      );
+
+      return { artifact: createdArtifact, plan };
     } catch (error) {
-      unlinkSync(outputPath);
+      this.repository.appendEvent(
+        input.projectId,
+        "requirements_plan_generation_failed",
+        {
+          runId: input.runId,
+          artifactIds: input.artifactIds,
+          message: error instanceof Error ? error.message : String(error),
+          durationMs: Date.now() - startedAt,
+        },
+        new Date().toISOString(),
+      );
       throw error;
     }
   }
@@ -119,6 +153,14 @@ export class RequirementsPlanService {
     }
     return resolvedPath;
   }
+}
+
+function countCoverage(cases: RequirementsTestPlan["cases"]): Record<string, number> {
+  const counts: Record<string, number> = { mapped: 0, partial: 0, unmapped: 0, "not-applicable": 0 };
+  for (const testCase of cases) {
+    counts[testCase.coverage.status] += 1;
+  }
+  return counts;
 }
 
 function renderRequirementsPlan(artifact: Artifact, plan: RequirementsTestPlan): string {

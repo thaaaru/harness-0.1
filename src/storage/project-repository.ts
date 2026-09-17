@@ -117,6 +117,24 @@ export class ProjectRepository {
     return rows.map((row) => this.toArtifact(row as StoredArtifact));
   }
 
+  appendEvent(projectId: string, type: string, payload: Record<string, unknown>, createdAt: string): void {
+    this.db
+      .prepare("INSERT INTO project_events (project_id, type, payload_json, created_at) VALUES (?, ?, ?, ?)")
+      .run(projectId, type, JSON.stringify(payload), createdAt);
+  }
+
+  listEvents(
+    projectId: string,
+  ): Array<{ type: string; payload: Record<string, unknown>; createdAt: string }> {
+    return this.db
+      .prepare("SELECT type, payload_json, created_at FROM project_events WHERE project_id = ? ORDER BY id")
+      .all(projectId)
+      .map((row) => {
+        const typed = row as { type: string; payload_json: string; created_at: string };
+        return { type: typed.type, payload: JSON.parse(typed.payload_json), createdAt: typed.created_at };
+      });
+  }
+
   close(): void {
     this.db.close();
   }
@@ -138,6 +156,14 @@ export class ProjectRepository {
         file_path TEXT NOT NULL,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS project_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_id TEXT NOT NULL,
+        type TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        created_at TEXT NOT NULL
       );
     `);
   }

@@ -3,6 +3,7 @@ import { join } from "node:path";
 
 import { chromium, type Page, type Route } from "playwright";
 
+import { runArtifactsDirectory, screenshotFileName } from "../artifacts.js";
 import type { AppSnapshot, ExecutionResult, NavigationCheck, PageSnapshot, TargetPolicy } from "../domain.js";
 import {
   PASSIVE_CROSS_ORIGIN_RESOURCE_TYPES,
@@ -17,6 +18,7 @@ export interface NavigationExecutionInput {
   policy: TargetPolicy;
   headless?: boolean;
   artifactsDirectory: string;
+  storageStatePath?: string;
   onCheckStart?: (page: PageSnapshot) => void;
   onCheckComplete?: (check: NavigationCheck) => void;
 }
@@ -27,12 +29,6 @@ export interface NavigationExecutor {
 
 function normalizeText(value: string): string {
   return value.replace(/\s+/g, " ").trim();
-}
-
-function screenshotName(page: PageSnapshot): string {
-  const path =
-    page.path === "/" ? "home" : page.path.replaceAll(/^\/+|\/+$/g, "").replaceAll(/[^a-z0-9]+/gi, "-");
-  return `${path || "page"}.png`;
 }
 
 function errorMessage(error: unknown): string {
@@ -78,11 +74,14 @@ export class PlaywrightNavigationExecutor implements NavigationExecutor {
   async execute(input: NavigationExecutionInput): Promise<ExecutionResult> {
     const startedAt = new Date().toISOString();
     const policy = normalizePolicy(input.snapshot.targetUrl, input.policy);
-    const outputDirectory = join(input.artifactsDirectory, input.runId, "execution");
+    const outputDirectory = join(runArtifactsDirectory(input.artifactsDirectory, input.runId), "execution");
     await mkdir(outputDirectory, { recursive: true });
 
     const browser = await chromium.launch({ headless: input.headless ?? true });
-    const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+    const context = await browser.newContext({
+      viewport: { width: 1440, height: 900 },
+      storageState: input.storageStatePath,
+    });
     const checks: NavigationCheck[] = [];
 
     try {
@@ -106,14 +105,17 @@ export class PlaywrightNavigationExecutor implements NavigationExecutor {
         await route.continue();
       });
 
+      const takenScreenshotNames = new Set<string>();
       for (const pageSnapshot of input.snapshot.pages) {
         input.onCheckStart?.(pageSnapshot);
+        const screenshotName = screenshotFileName(pageSnapshot.path, takenScreenshotNames);
+        takenScreenshotNames.add(screenshotName);
         const check = await this.checkPage(
           context.newPage(),
           pageSnapshot,
           input.snapshot.targetUrl,
           policy,
-          outputDirectory,
+          join(outputDirectory, screenshotName),
         );
         input.onCheckComplete?.(check);
         checks.push(check);
@@ -138,11 +140,10 @@ export class PlaywrightNavigationExecutor implements NavigationExecutor {
     snapshot: PageSnapshot,
     targetUrl: string,
     policy: NormalizedPolicy,
-    outputDirectory: string,
+    screenshotPath: string,
   ): Promise<NavigationCheck> {
     const page = await pagePromise;
     const expectedHeading = snapshot.headings.at(0);
-    const screenshotPath = join(outputDirectory, screenshotName(snapshot));
 
     try {
       const safeSnapshotUrl = getSafeDiscoveryUrl(snapshot.url, targetUrl, policy);

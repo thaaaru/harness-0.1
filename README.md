@@ -12,7 +12,7 @@ Discover (read-only) → Plan → Human approval → Constrained read-only execu
 
 ### Safety boundaries
 
-- Discovery never clicks, fills, submits, uploads, or uses credentials.
+- Discovery never clicks, fills, submits, uploads, or handles credentials; an authenticated run only reuses a session an operator captured separately (see [Authenticated scans](#authenticated-scans)).
 - Execution exposes no click, fill, submit, upload, authentication, or credential capability; it can only navigate with `GET` and assert the approved discovery snapshot.
 - HTTPS is required by default; use `--allow-insecure-http` only for local/isolated test environments.
 - Only configured origins may load; cross-origin requests are blocked.
@@ -85,6 +85,29 @@ tekassure reject <run-id> --approver "Tharaka" --note "Adjust the proposed flow"
 `--headless` defaults to `true` during discovery and is persisted with the run. Pass `--headless false` to watch discovery and its later execution; execution may override it with the same flag.
 
 All run state, execution results, and LangGraph checkpoints live in `data/harness.sqlite`; screenshots are stored under `artifacts/<run-id>/`.
+
+### Authenticated scans
+
+Routes gated behind a login are invisible to an anonymous crawl. Capture a
+session once, out of band, and reuse it — the harness never handles the
+password, MFA, or SSO flow itself:
+
+```bash
+tekassure login --url https://staging.example.test/login --save-storage-state ./auth/staging.json
+# a headed browser opens; log in however the app requires, then press Enter
+
+tekassure discover --url https://staging.example.test --storage-state ./auth/staging.json
+```
+
+The saved file holds live session cookies — treat it like a credential
+(`0600` permissions, not committed to version control). `discover` fails fast
+if the path does not exist. Once a run is created with `--storage-state`, its
+later `execute` reuses the same session automatically. Every other guarantee
+in [Safety boundaries](#safety-boundaries) is unchanged: no click, fill,
+submit, or upload is added by authenticating; the crawl can only reach
+further pages, not perform further actions. See
+`docs/superpowers/specs/2026-09-17-authenticated-scan-design.md` for the full
+design.
 
 ## Commands
 

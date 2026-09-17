@@ -1,6 +1,10 @@
 import { createHash, randomUUID } from "node:crypto";
+import { mkdir } from "node:fs/promises";
+import { join } from "node:path";
+
 import { chromium, type Page } from "playwright";
 
+import { runArtifactsDirectory, screenshotFileName } from "../artifacts.js";
 import type { AppSnapshot, DiscoveredControl, PageSnapshot } from "../domain.js";
 import {
   PASSIVE_CROSS_ORIGIN_RESOURCE_TYPES,
@@ -37,7 +41,10 @@ export class PlaywrightAppDiscoverer implements AppDiscoverer {
     }
 
     const browser = await chromium.launch({ headless: request.headless ?? true });
-    const context = await browser.newContext({ serviceWorkers: "block" });
+    const context = await browser.newContext({
+      serviceWorkers: "block",
+      storageState: request.storageStatePath,
+    });
     const consoleMessages: string[] = [];
     const pageErrors: string[] = [];
 
@@ -68,6 +75,12 @@ export class PlaywrightAppDiscoverer implements AppDiscoverer {
     });
     page.on("pageerror", (error) => pageErrors.push(redactAndTruncate(error.message)));
 
+    const discoveryDirectory = join(
+      runArtifactsDirectory(request.artifactsDirectory, request.runId),
+      "discovery",
+    );
+    await mkdir(discoveryDirectory, { recursive: true });
+    const takenScreenshotNames = new Set<string>();
     const pages: PageSnapshot[] = [];
     const warnings: string[] = [];
     const queued = [root.toString()];
@@ -93,7 +106,16 @@ export class PlaywrightAppDiscoverer implements AppDiscoverer {
             consoleMessages.slice(consoleStart),
             pageErrors.slice(pageErrorStart),
           );
-          pages.push(snapshot);
+          const screenshotPath = await this.captureScreenshot(
+            page,
+            discoveryDirectory,
+            snapshot.path,
+            takenScreenshotNames,
+          );
+          if (!screenshotPath) {
+            warnings.push(`Could not capture a screenshot for ${candidate}`);
+          }
+          pages.push(screenshotPath ? { ...snapshot, screenshotPath } : snapshot);
 
           for (const link of snapshot.links) {
             if (
@@ -199,6 +221,25 @@ export class PlaywrightAppDiscoverer implements AppDiscoverer {
       ...snapshotWithoutFingerprint,
       fingerprint: fingerprint(JSON.stringify(snapshotWithoutFingerprint)),
     };
+  }
+
+  private async captureScreenshot(
+    page: Page,
+    directory: string,
+    path: string,
+    taken: Set<string>,
+  ): Promise<string | undefined> {
+    const name = screenshotFileName(path, taken);
+    const filePath = join(directory, name);
+    try {
+      await page.evaluate(() => document.fonts.ready).catch(() => undefined);
+      await page.waitForLoadState("networkidle", { timeout: 2_000 }).catch(() => undefined);
+      await page.screenshot({ path: filePath, fullPage: true });
+    } catch {
+      return undefined;
+    }
+    taken.add(name);
+    return filePath;
   }
 }
 

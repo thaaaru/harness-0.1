@@ -1,4 +1,5 @@
 export * from "./domain.js";
+export * from "./artifacts.js";
 export * from "./brand.js";
 export * from "./licensing/activate.js";
 export * from "./licensing/verify-license.js";

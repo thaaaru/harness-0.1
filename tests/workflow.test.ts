@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -49,6 +49,32 @@ class FakeNavigationExecutor implements NavigationExecutor {
 
   async execute(input: NavigationExecutionInput): Promise<ExecutionResult> {
     this.calls.push(input);
+    const timestamp = new Date().toISOString();
+    return {
+      runId: input.runId,
+      startedAt: timestamp,
+      completedAt: timestamp,
+      status: "passed",
+      checks: input.snapshot.pages.map((page) => ({
+        url: page.url,
+        expectedTitle: page.title,
+        observedTitle: page.title,
+        expectedHeading: page.headings.at(0),
+        observedHeading: page.headings.at(0),
+        status: "passed",
+      })),
+    };
+  }
+}
+
+class ThrowOnceNavigationExecutor implements NavigationExecutor {
+  calls = 0;
+
+  async execute(input: NavigationExecutionInput): Promise<ExecutionResult> {
+    this.calls += 1;
+    if (this.calls === 1) {
+      throw new Error("browser launch failed");
+    }
     const timestamp = new Date().toISOString();
     return {
       runId: input.runId,
@@ -126,5 +152,95 @@ describe("HarnessWorkflow", () => {
     expect(executor.calls[0]?.headless).toBe(false);
     expect(repository.getExecution(pending.runId)?.status).toBe("passed");
     expect(repository.listEvents(pending.runId).map((event) => event.type)).toContain("execution_completed");
+  });
+
+  it("allows re-execution after the executor throws without ever saving an execution row", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "harness-workflow-"));
+    const databasePath = join(directory, "harness.sqlite");
+    const repository = new RunRepository(databasePath);
+    const discoverer = new FakeDiscoverer();
+    const executor = new ThrowOnceNavigationExecutor();
+    const workflow = new HarnessWorkflow({
+      databasePath,
+      repository,
+      discoverer,
+      executor,
+      lighthouseAuditor: async () => undefined,
+    });
+    resources.push({ workflow, repository, directory });
+
+    const pending = await workflow.start({
+      targetUrl: "https://staging.example.test",
+      goal: WEB_APP_BASELINE_PRESET,
+      artifactsDirectory: join(directory, "artifacts"),
+      headless: false,
+      policy: {
+        allowedOrigins: [],
+        maxPages: 5,
+        maxControlsPerPage: 20,
+        maxLinksPerPage: 20,
+        allowInsecureHttp: false,
+      },
+    });
+    await workflow.approve(pending.runId, "test-operator", "The test scope is safe.");
+
+    await expect(workflow.execute(pending.runId)).rejects.toThrow("browser launch failed");
+    expect(repository.getRun(pending.runId).status).toBe("failed");
+    expect(repository.getExecution(pending.runId)).toBeUndefined();
+
+    const executed = await workflow.execute(pending.runId);
+    expect(executed.status).toBe("passed");
+    expect(executor.calls).toBe(2);
+  });
+
+  it("rejects a start() call whose storage state file does not exist, and threads it through when valid", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "harness-workflow-auth-"));
+    const databasePath = join(directory, "harness.sqlite");
+    const repository = new RunRepository(databasePath);
+    const discoverer = new FakeDiscoverer();
+    const executor = new FakeNavigationExecutor();
+    const workflow = new HarnessWorkflow({
+      databasePath,
+      repository,
+      discoverer,
+      executor,
+      lighthouseAuditor: async () => undefined,
+    });
+    resources.push({ workflow, repository, directory });
+
+    const missingPath = join(directory, "missing-storage-state.json");
+    await expect(
+      workflow.start({
+        targetUrl: "https://staging.example.test",
+        goal: WEB_APP_BASELINE_PRESET,
+        artifactsDirectory: join(directory, "artifacts"),
+        storageStatePath: missingPath,
+        policy: {
+          allowedOrigins: [],
+          maxPages: 5,
+          maxControlsPerPage: 20,
+          maxLinksPerPage: 20,
+          allowInsecureHttp: false,
+        },
+      }),
+    ).rejects.toThrow(`Storage state file not found: ${missingPath}`);
+
+    const storageStatePath = join(directory, "storage-state.json");
+    await writeFile(storageStatePath, JSON.stringify({ cookies: [], origins: [] }));
+    await workflow.start({
+      targetUrl: "https://staging.example.test",
+      goal: WEB_APP_BASELINE_PRESET,
+      artifactsDirectory: join(directory, "artifacts"),
+      storageStatePath,
+      policy: {
+        allowedOrigins: [],
+        maxPages: 5,
+        maxControlsPerPage: 20,
+        maxLinksPerPage: 20,
+        allowInsecureHttp: false,
+      },
+    });
+
+    expect(discoverer.requests.at(-1)?.storageStatePath).toBe(storageStatePath);
   });
 });

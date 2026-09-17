@@ -2,14 +2,17 @@
 
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
+import { createInterface } from "node:readline/promises";
 import { Command } from "commander";
 import { config as loadDotenv } from "dotenv";
+import { chromium } from "playwright";
 
 import { ArtifactSchema } from "./domain.js";
 import { WEB_APP_BASELINE_PRESET } from "./goal-presets.js";
+import { runArtifactsDirectory } from "./artifacts.js";
 
 import { loadBrandConfig } from "./brand.js";
 import { PlaywrightAppDiscoverer } from "./discovery/playwright-app-discoverer.js";
@@ -62,6 +65,7 @@ program
   .option("--headless <boolean>", "run Chromium headlessly (true or false)", parseBoolean, true)
   .option("--json", "print raw JSON instead of opening an interactive browser review", false)
   .option("--project <projectId>", "link this run to a project")
+  .option("--storage-state <path>", "Playwright storage state file for an authenticated session")
   .action(async (options) => {
     if (options.project) {
       await withProjectRepository(options.database, async (repository) => {
@@ -69,13 +73,15 @@ program
       });
     }
 
+    const artifactsDirectory = resolve(options.artifacts);
     await withWorkflow(options.database, async (workflow, license) => {
       const result = await workflow.start({
         targetUrl: options.url,
         projectId: options.project,
         goal: options.goal,
-        artifactsDirectory: resolve(options.artifacts),
+        artifactsDirectory,
         headless: options.headless,
+        storageStatePath: options.storageState ? resolve(options.storageState) : undefined,
         policy: {
           allowedOrigins: options.allowOrigin,
           maxPages: options.maxPages,
@@ -107,6 +113,7 @@ program
         brand,
         license,
         controlPlaneUrl: CONTROL_PLANE_URL,
+        artifactsDirectory,
         onStatus: (message) => process.stdout.write(`${message}\n`),
       });
       process.stdout.write("Done.\n");
@@ -316,6 +323,18 @@ program
   });
 
 program
+  .command("login")
+  .description(
+    "Open a headed browser to manually authenticate, then save the session as a storage state file for --storage-state.",
+  )
+  .requiredOption("--url <url>", "application login URL to open")
+  .requiredOption("--save-storage-state <path>", "output path for the captured storage state file")
+  .action(async (options) => {
+    await requireValidLicense();
+    await saveAuthenticatedStorageState(options.url, resolve(options.saveStorageState));
+  });
+
+program
   .command("status <runId>")
   .description("Show a run, its app snapshot, test plan, and any execution result.")
   .option("--database <path>", "SQLite database path", "data/harness.sqlite")
@@ -333,7 +352,8 @@ program
   .action(async (runId, options) => {
     await withWorkflow(options.database, async (workflow) => {
       const result = workflow.getResult(runId);
-      const outputDir = resolve(options.output || `artifacts/${runId}`);
+      const run = workflow.getRun(runId);
+      const outputDir = resolve(options.output || runArtifactsDirectory(run.input.artifactsDirectory, runId));
       const { htmlPath, pdfPath } = await writeReportFiles(result, brand, outputDir);
       process.stdout.write(`${JSON.stringify({ html: htmlPath, pdf: pdfPath }, null, 2)}\n`);
     });
@@ -434,6 +454,34 @@ async function installChromium(): Promise<void> {
       reject(new Error(`Chromium installation exited with code ${code ?? "unknown"}.`));
     });
   });
+}
+
+async function saveAuthenticatedStorageState(url: string, outputPath: string): Promise<void> {
+  const browser = await chromium.launch({ headless: false });
+  try {
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    await page.goto(url);
+    process.stdout.write(
+      "Log in in the opened browser window, then press Enter here once you're signed in.\n",
+    );
+    await waitForEnter();
+    mkdirSync(dirname(outputPath), { recursive: true });
+    await context.storageState({ path: outputPath });
+    chmodSync(outputPath, 0o600);
+    process.stdout.write(`Saved storage state to ${outputPath}\n`);
+  } finally {
+    await browser.close();
+  }
+}
+
+async function waitForEnter(): Promise<void> {
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    await rl.question("");
+  } finally {
+    rl.close();
+  }
 }
 
 function printResult(result: WorkflowResult): void {

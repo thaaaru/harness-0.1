@@ -6,6 +6,7 @@ export type DiscoveryRequest = {
   policy: TargetPolicy;
   artifactsDirectory: string;
   headless?: boolean;
+  storageStatePath?: string;
 };
 
 export interface AppDiscoverer {

@@ -157,6 +157,7 @@ export const HarnessRunInputSchema = z.object({
   }),
   artifactsDirectory: z.string().min(1).default("artifacts"),
   headless: z.boolean().default(true),
+  storageStatePath: z.string().min(1).optional(),
 });
 export type HarnessRunInput = z.infer<typeof HarnessRunInputSchema>;
 
