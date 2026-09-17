@@ -331,7 +331,11 @@ program
   .requiredOption("--save-storage-state <path>", "output path for the captured storage state file")
   .action(async (options) => {
     await requireValidLicense();
-    await saveAuthenticatedStorageState(options.url, resolve(options.saveStorageState));
+    const storageStatePath = resolve(options.saveStorageState);
+    await saveAuthenticatedStorageState(options.url, storageStatePath);
+    printNextSteps([
+      `${brand.cliDisplayName} discover --url <app-url> --storage-state ${storageStatePath}`,
+    ]);
   });
 
 program
