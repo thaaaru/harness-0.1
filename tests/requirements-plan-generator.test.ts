@@ -72,12 +72,14 @@ describe("DeterministicRequirementsPlanGenerator", () => {
     });
 
     expect(plan.cases[0]?.coverage.status).toBe("not-applicable");
-    expect(plan.warnings).toContain("No discovery snapshot was supplied; coverage mapping was not performed.");
+    expect(plan.warnings).toContain(
+      "No discovery snapshot was supplied; coverage mapping was not performed.",
+    );
   });
 
   it("rejects empty artifact input", async () => {
-    await expect(new DeterministicRequirementsPlanGenerator().generate({ project, artifacts: [] })).rejects.toThrow(
-      "Cannot generate test cases without project artifacts.",
-    );
+    await expect(
+      new DeterministicRequirementsPlanGenerator().generate({ project, artifacts: [] }),
+    ).rejects.toThrow("Cannot generate test cases without project artifacts.");
   });
 });

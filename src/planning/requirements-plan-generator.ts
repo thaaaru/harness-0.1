@@ -95,7 +95,10 @@ function extractSections(markdown: string): Array<{ title: string; excerpt: stri
 
   return headings.map((heading, index) => ({
     title: heading.title,
-    excerpt: body.slice(heading.index, headings[index + 1]?.index).trim().slice(0, 2_000),
+    excerpt: body
+      .slice(heading.index, headings[index + 1]?.index)
+      .trim()
+      .slice(0, 2_000),
   }));
 }
 
@@ -151,6 +154,10 @@ function significantTerms(value: string): Set<string> {
     value
       .toLowerCase()
       .match(/[a-z0-9]+/g)
-      ?.filter((term) => term.length > 3 && !["that", "this", "with", "from", "must", "should", "documented", "requirement"].includes(term)) ?? [],
+      ?.filter(
+        (term) =>
+          term.length > 3 &&
+          !["that", "this", "with", "from", "must", "should", "documented", "requirement"].includes(term),
+      ) ?? [],
   );
 }
