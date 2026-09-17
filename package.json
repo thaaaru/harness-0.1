@@ -20,6 +20,8 @@
     "typecheck": "tsc --project tsconfig.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
+    "generate-keypair": "tsx scripts/generate-keypair.ts",
+    "issue-license": "tsx scripts/issue-license.ts",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",

@@ -16,8 +16,8 @@ import { runArtifactsDirectory } from "./artifacts.js";
 
 import { loadBrandConfig } from "./brand.js";
 import { PlaywrightAppDiscoverer } from "./discovery/playwright-app-discoverer.js";
-import { activateLicense, reportUsageEvent, requireValidLicense } from "./licensing/activate.js";
-import { LicenseError, type LicensePayload } from "./licensing/verify-license.js";
+import { activateLicense, requireValidLicense } from "./licensing/activate.js";
+import { LicenseError } from "./licensing/verify-license.js";
 import { RequirementsPlanService } from "./planning/requirements-plan-service.js";
 import { writeReportFiles } from "./reporting/report.js";
 import { runInteractiveReview } from "./review/review-server.js";
@@ -33,7 +33,6 @@ import { HarnessWorkflow, type WorkflowResult } from "./workflow/harness-workflo
 loadDotenv({ quiet: true });
 
 const brand = loadBrandConfig();
-const CONTROL_PLANE_URL = process.env.NOVA_CONTROL_PLANE_URL ?? "https://license.teklab.dev";
 
 const program = new Command();
 program
@@ -44,10 +43,10 @@ program
   .command("license")
   .description("Manage the local Nova license.")
   .command("activate <key>")
-  .description("Activate a license key issued by the control plane.")
+  .description("Activate a license key.")
   .action(async (key: string) => {
     await withLicenseErrorHandling(async () => {
-      const stored = await activateLicense(key, CONTROL_PLANE_URL);
+      const stored = await activateLicense(key);
       process.stdout.write(
         `License ${stored.payload.licenseId} activated for org ${stored.payload.orgId}.\n`,
       );
@@ -76,7 +75,7 @@ program
     }
 
     const artifactsDirectory = resolve(options.artifacts);
-    await withWorkflow(options.database, async (workflow, license) => {
+    await withWorkflow(options.database, async (workflow) => {
       const result = await workflow.start({
         targetUrl: options.url,
         projectId: options.project,
@@ -113,8 +112,6 @@ program
         workflow,
         result,
         brand,
-        license,
-        controlPlaneUrl: CONTROL_PLANE_URL,
         artifactsDirectory,
         onStatus: (message) => process.stdout.write(`${message}\n`),
       });
@@ -307,9 +304,8 @@ program
     parseBoolean,
   )
   .action(async (runId, options) => {
-    await withWorkflow(options.database, async (workflow, license) => {
+    await withWorkflow(options.database, async (workflow) => {
       const result = await workflow.execute(runId, { headless: options.headless });
-      reportUsageEvent(CONTROL_PLANE_URL, { runId, orgId: license.orgId, kind: "execute" });
       printResult(result);
       if (result.status === "passed" || result.status === "failed") {
         printNextSteps([`${brand.cliDisplayName} report ${result.runId}`]);
@@ -372,13 +368,11 @@ program
   .option("--artifacts <path>", "artifact directory", "artifacts")
   .option("--port <port>", "port to listen on (default: pick any free port)", parsePositiveInteger)
   .action(async (options) => {
-    const license = await requireValidLicense();
+    await requireValidLicense();
     const dashboard = await startDashboardServer({
       databasePath: resolve(options.database),
       artifactsDirectory: resolve(options.artifacts),
       brand,
-      license,
-      controlPlaneUrl: CONTROL_PLANE_URL,
       port: options.port,
       onStatus: (message) => process.stdout.write(`${message}\n`),
     });
@@ -434,9 +428,9 @@ async function withProjectRepository<T>(
 
 async function withWorkflow<T>(
   databasePath: string,
-  action: (workflow: HarnessWorkflow, license: LicensePayload) => Promise<T>,
+  action: (workflow: HarnessWorkflow) => Promise<T>,
 ): Promise<T> {
-  const license = await requireValidLicense();
+  await requireValidLicense();
 
   const resolvedDatabasePath = resolve(databasePath);
   const repository = new RunRepository(resolvedDatabasePath);
@@ -447,7 +441,7 @@ async function withWorkflow<T>(
   });
 
   try {
-    return await action(workflow, license);
+    return await action(workflow);
   } finally {
     workflow.close();
     repository.close();

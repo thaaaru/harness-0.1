@@ -17,7 +17,7 @@ const LicensePayloadSchema = z.object({
 });
 export type LicensePayload = z.infer<typeof LicensePayloadSchema>;
 
-// Tolerate device clock drift; the control plane is the source of truth for exp/nbf.
+// Tolerate device clock drift around the signed exp/nbf; there is no server to re-check against.
 const CLOCK_TOLERANCE_SECONDS = 24 * 60 * 60;
 
 export async function verifyLicenseToken(token: string, publicKeyPem?: string): Promise<LicensePayload> {

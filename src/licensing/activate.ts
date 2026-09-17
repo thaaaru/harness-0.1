@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -19,18 +18,14 @@ function licensePath(): string {
   return join(licenseDir(), "license.json");
 }
 
-export async function activateLicense(token: string, controlPlaneUrl: string): Promise<StoredLicense> {
+/**
+ * Activates a license key entirely offline: the token is a self-contained,
+ * ES256-signed JWT (see `scripts/issue-license.ts`), so activation is just
+ * verifying the signature/expiry locally and writing it to disk. There is
+ * no license server to call and no network dependency.
+ */
+export async function activateLicense(token: string): Promise<StoredLicense> {
   const payload = await verifyLicenseToken(token);
-
-  const response = await fetch(`${controlPlaneUrl.replace(/\/+$/, "")}/activate`, {
-    method: "POST",
-    headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
-    body: JSON.stringify({ deviceId: getOrCreateDeviceId() }),
-  });
-
-  if (!response.ok) {
-    throw new LicenseError(`License activation was rejected by the control plane (HTTP ${response.status}).`);
-  }
 
   const stored: StoredLicense = { token, payload, activatedAt: new Date().toISOString() };
   mkdirSync(licenseDir(), { recursive: true });
@@ -59,29 +54,4 @@ export async function requireValidLicense(): Promise<LicensePayload> {
     throw new LicenseError("No Nova license found. Run `nova license activate <key>` first.");
   }
   return verifyLicenseToken(stored.token);
-}
-
-export function reportUsageEvent(
-  controlPlaneUrl: string,
-  event: { runId: string; orgId: string; kind: string },
-): void {
-  fetch(`${controlPlaneUrl.replace(/\/+$/, "")}/usage-events`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ ...event, occurredAt: new Date().toISOString() }),
-  }).catch(() => {
-    // Usage reporting is best-effort telemetry; it must never block or fail a test run.
-  });
-}
-
-function getOrCreateDeviceId(): string {
-  const idPath = join(licenseDir(), "device-id");
-  if (existsSync(idPath)) {
-    return readFileSync(idPath, "utf8").trim();
-  }
-
-  const id = randomUUID();
-  mkdirSync(licenseDir(), { recursive: true });
-  writeFileSync(idPath, id);
-  return id;
 }

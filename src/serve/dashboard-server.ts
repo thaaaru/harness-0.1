@@ -5,8 +5,6 @@ import { chromium, type Browser, type BrowserContext } from "playwright";
 
 import type { BrandConfig } from "../brand.js";
 import { runArtifactsDirectory } from "../artifacts.js";
-import { reportUsageEvent } from "../licensing/activate.js";
-import type { LicensePayload } from "../licensing/verify-license.js";
 import { writeReportFiles } from "../reporting/report.js";
 import { ProjectRepository } from "../storage/project-repository.js";
 import { RunRepository } from "../storage/run-repository.js";
@@ -24,8 +22,6 @@ export type DashboardServerOptions = {
   databasePath: string;
   artifactsDirectory: string;
   brand: BrandConfig;
-  license: LicensePayload;
-  controlPlaneUrl: string;
   port?: number;
   onStatus: (message: string) => void;
 };
@@ -44,7 +40,7 @@ type PendingLogin = { browser: Browser; context: BrowserContext };
  * real, separate headed browser window; Nova never handles credentials.
  */
 export async function startDashboardServer(options: DashboardServerOptions): Promise<DashboardServer> {
-  const { databasePath, artifactsDirectory, brand, license, controlPlaneUrl, onStatus } = options;
+  const { databasePath, artifactsDirectory, brand, onStatus } = options;
 
   const repository = new RunRepository(databasePath);
   const projectRepository = new ProjectRepository(databasePath);
@@ -192,7 +188,6 @@ export async function startDashboardServer(options: DashboardServerOptions): Pro
         onCheckComplete: (check) =>
           send("check-complete", { url: check.url, status: check.status, error: check.error }),
       });
-      reportUsageEvent(controlPlaneUrl, { runId, orgId: license.orgId, kind: "execute" });
       await writeReportFiles(result, brand, runArtifactsDirectory(artifactsDirectory, runId));
 
       const passed = result.execution?.checks.filter((check) => check.status === "passed").length ?? 0;

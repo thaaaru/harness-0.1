@@ -3,8 +3,6 @@ import { createServer } from "node:http";
 
 import { runArtifactsDirectory } from "../artifacts.js";
 import type { BrandConfig } from "../brand.js";
-import { reportUsageEvent } from "../licensing/activate.js";
-import type { LicensePayload } from "../licensing/verify-license.js";
 import { writeReportFiles } from "../reporting/report.js";
 import type { HarnessWorkflow, WorkflowResult } from "../workflow/harness-workflow.js";
 import { openInBrowser } from "./browser.js";
@@ -14,8 +12,6 @@ export type InteractiveReviewOptions = {
   workflow: HarnessWorkflow;
   result: WorkflowResult;
   brand: BrandConfig;
-  license: LicensePayload;
-  controlPlaneUrl: string;
   artifactsDirectory: string;
   onStatus: (message: string) => void;
 };
@@ -33,7 +29,7 @@ const POST_LINK_CLOSE_GRACE_MS = 2_000;
  * — this never needs to be reachable from outside the machine.
  */
 export function runInteractiveReview(options: InteractiveReviewOptions): Promise<WorkflowResult> {
-  const { workflow, brand, license, controlPlaneUrl, artifactsDirectory, onStatus } = options;
+  const { workflow, brand, artifactsDirectory, onStatus } = options;
   let current = options.result;
   let reportHtmlPath: string | undefined;
   let reportPdfPath: string | undefined;
@@ -88,7 +84,6 @@ export function runInteractiveReview(options: InteractiveReviewOptions): Promise
           onCheckComplete: (check) =>
             send("check-complete", { url: check.url, status: check.status, error: check.error }),
         });
-        reportUsageEvent(controlPlaneUrl, { runId: current.runId, orgId: license.orgId, kind: "execute" });
 
         const written = await writeReportFiles(
           current,
