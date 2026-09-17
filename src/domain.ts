@@ -46,6 +46,48 @@ export type RunStatus = z.infer<typeof RunStatusSchema>;
 export const RiskLevelSchema = z.enum(["read_only", "session_change", "state_change"]);
 export type RiskLevel = z.infer<typeof RiskLevelSchema>;
 
+export const RequirementSourceSchema = z.object({
+  artifactId: z.string().uuid(),
+  filePath: z.string(),
+  section: z.string().trim().min(1).max(500),
+  excerpt: z.string().trim().min(1).max(2_000),
+});
+export type RequirementSource = z.infer<typeof RequirementSourceSchema>;
+
+export const RequirementCoverageSchema = z.object({
+  status: z.enum(["mapped", "partial", "unmapped", "not-applicable"]),
+  discoveredPaths: z.array(z.string()),
+  rationale: z.string().trim().min(1).max(2_000),
+});
+export type RequirementCoverage = z.infer<typeof RequirementCoverageSchema>;
+
+export const GeneratedTestCaseSchema = z.object({
+  id: z.string().uuid(),
+  title: z.string().trim().min(1).max(200),
+  objective: z.string().trim().min(1).max(2_000),
+  preconditions: z.array(z.string().trim().min(1).max(500)),
+  steps: z.array(z.string().trim().min(1).max(2_000)).min(1),
+  expectedResult: z.string().trim().min(1).max(2_000),
+  risk: RiskLevelSchema,
+  requiresApproval: z.boolean(),
+  sources: z.array(RequirementSourceSchema).min(1),
+  coverage: RequirementCoverageSchema,
+});
+export type GeneratedTestCase = z.infer<typeof GeneratedTestCaseSchema>;
+
+export const RequirementsTestPlanSchema = z.object({
+  id: z.string().uuid(),
+  projectId: z.string().uuid(),
+  runId: z.string().uuid().optional(),
+  createdAt: z.string().datetime(),
+  artifactIds: z.array(z.string().uuid()).min(1),
+  summary: z.string().trim().min(1).max(4_000),
+  cases: z.array(GeneratedTestCaseSchema).min(1),
+  gaps: z.array(z.string().trim().min(1).max(2_000)),
+  warnings: z.array(z.string().trim().min(1).max(2_000)),
+});
+export type RequirementsTestPlan = z.infer<typeof RequirementsTestPlanSchema>;
+
 export const ControlKindSchema = z.enum([
   "link",
   "button",

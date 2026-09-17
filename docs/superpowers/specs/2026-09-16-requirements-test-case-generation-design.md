@@ -5,7 +5,7 @@
 The artifact store makes approved, project-scoped Markdown requirements available
 to TekAssure. Discovery and the current `HeuristicTestPlanner` remain useful,
 but they only describe evidence from the presently rendered application. This
-design adds a top-down planning stage that derives *proposed* test cases from
+design adds a top-down planning stage that derives _proposed_ test cases from
 requirements artifacts, then maps them to discovery evidence without granting
 any additional browser, repository, network, or credential access.
 

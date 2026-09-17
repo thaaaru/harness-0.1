@@ -5,6 +5,7 @@ export * from "./licensing/verify-license.js";
 export * from "./discovery/contracts.js";
 export * from "./discovery/playwright-app-discoverer.js";
 export * from "./planning/heuristic-planner.js";
+export * from "./planning/requirements-plan-generator.js";
 export * from "./policy.js";
 export * from "./reporting/report.js";
 export * from "./review/browser.js";
