@@ -5,6 +5,7 @@ import { chromium, type Browser, type BrowserContext } from "playwright";
 
 import type { BrandConfig } from "../brand.js";
 import { runArtifactsDirectory } from "../artifacts.js";
+import { detectLanAddress, isLoopbackHost } from "../network.js";
 import { writeReportFiles } from "../reporting/report.js";
 import { KnowledgeRepository } from "../storage/knowledge-repository.js";
 import { ProjectRepository } from "../storage/project-repository.js";
@@ -25,6 +26,8 @@ export type DashboardServerOptions = {
   artifactsDirectory: string;
   brand: BrandConfig;
   port?: number;
+  /** Bind address for the dashboard. Defaults to 127.0.0.1 (loopback-only). */
+  host?: string;
   onStatus: (message: string) => void;
 };
 
@@ -37,12 +40,16 @@ type PendingLogin = { browser: Browser; context: BrowserContext };
 
 /**
  * Starts a persistent local dashboard: lists runs, starts new discovery runs,
- * reviews/approves/executes any pending run, and serves reports — all on
- * 127.0.0.1. Login capture is triggered from the browser, but always opens a
- * real, separate headed browser window; Nova never handles credentials.
+ * reviews/approves/executes any pending run, and serves reports. Defaults to
+ * 127.0.0.1 (loopback-only, no authentication on any of it); pass `host` to
+ * bind elsewhere (e.g. for LAN access), which the caller must only do on a
+ * trusted network. Login capture is triggered from the browser, but always
+ * opens a real, separate headed browser window; Nova never handles
+ * credentials.
  */
 export async function startDashboardServer(options: DashboardServerOptions): Promise<DashboardServer> {
   const { databasePath, knowledgeDatabasePath, artifactsDirectory, brand, onStatus } = options;
+  const host = options.host ?? "127.0.0.1";
 
   const repository = new RunRepository(databasePath);
   const projectRepository = new ProjectRepository(databasePath);
@@ -218,14 +225,21 @@ export async function startDashboardServer(options: DashboardServerOptions): Pro
 
   await new Promise<void>((resolvePromise, rejectPromise) => {
     server.once("error", rejectPromise);
-    server.listen(options.port ?? 0, "127.0.0.1", () => resolvePromise());
+    server.listen(options.port ?? 0, host, () => resolvePromise());
   });
 
   const address = server.address();
   if (!address || typeof address === "string") {
     throw new Error("Failed to determine the dashboard server's port.");
   }
-  const url = `http://127.0.0.1:${address.port}/`;
+  const displayHost = host === "0.0.0.0" ? (detectLanAddress() ?? host) : host;
+  const url = `http://${displayHost}:${address.port}/`;
+  if (!isLoopbackHost(host)) {
+    onStatus(
+      "WARNING: the dashboard is reachable from your network, unauthenticated — " +
+        "anyone who can reach it can start/approve/execute scans. Use only on a trusted network.",
+    );
+  }
 
   return {
     url,

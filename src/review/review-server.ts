@@ -3,6 +3,7 @@ import { createServer } from "node:http";
 
 import { runArtifactsDirectory } from "../artifacts.js";
 import type { BrandConfig } from "../brand.js";
+import { detectLanAddress, isLoopbackHost } from "../network.js";
 import { writeReportFiles } from "../reporting/report.js";
 import type { HarnessWorkflow, WorkflowResult } from "../workflow/harness-workflow.js";
 import { openInBrowser } from "./browser.js";
@@ -13,6 +14,8 @@ export type InteractiveReviewOptions = {
   result: WorkflowResult;
   brand: BrandConfig;
   artifactsDirectory: string;
+  /** Bind address for the review server. Defaults to 127.0.0.1 (loopback-only). */
+  host?: string;
   onStatus: (message: string) => void;
 };
 
@@ -25,11 +28,14 @@ const POST_LINK_CLOSE_GRACE_MS = 2_000;
 
 /**
  * Opens a browser-based review UI for a discovered run and resolves once the
- * QA reviewer has approved+executed or rejected it. Bound to 127.0.0.1 only
- * — this never needs to be reachable from outside the machine.
+ * QA reviewer has approved+executed or rejected it. Defaults to 127.0.0.1
+ * (loopback-only, unauthenticated approve/execute); pass `host` to bind
+ * elsewhere (e.g. for LAN access), which the caller must only do on a
+ * trusted network since there is no authentication on these endpoints.
  */
 export function runInteractiveReview(options: InteractiveReviewOptions): Promise<WorkflowResult> {
   const { workflow, brand, artifactsDirectory, onStatus } = options;
+  const host = options.host ?? "127.0.0.1";
   let current = options.result;
   let reportHtmlPath: string | undefined;
   let reportPdfPath: string | undefined;
@@ -141,13 +147,20 @@ export function runInteractiveReview(options: InteractiveReviewOptions): Promise
 
     server.on("error", rejectPromise);
 
-    server.listen(0, "127.0.0.1", () => {
+    server.listen(0, host, () => {
       const address = server.address();
       if (!address || typeof address === "string") {
         rejectPromise(new Error("Failed to determine the review server's port."));
         return;
       }
-      const url = `http://127.0.0.1:${address.port}/`;
+      const displayHost = host === "0.0.0.0" ? (detectLanAddress() ?? host) : host;
+      const url = `http://${displayHost}:${address.port}/`;
+      if (!isLoopbackHost(host)) {
+        onStatus(
+          "WARNING: the review server is reachable from your network, unauthenticated — " +
+            "approve/reject/execute is exposed to anyone who can reach it. Use only on a trusted network.",
+        );
+      }
       onStatus(`Opening review in your browser: ${url}`);
       openInBrowser(url);
     });

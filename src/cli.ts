@@ -69,6 +69,11 @@ program
   .option("--json", "print raw JSON instead of opening an interactive browser review", false)
   .option("--project <projectId>", "link this run to a project")
   .option("--storage-state <path>", "Playwright storage state file for an authenticated session")
+  .option(
+    "--host <address>",
+    "bind address for the interactive review server; only change this on a trusted network (no authentication)",
+    "127.0.0.1",
+  )
   .action(async (options) => {
     if (options.project) {
       await withProjectRepository(options.database, async (repository) => {
@@ -115,6 +120,7 @@ program
         result,
         brand,
         artifactsDirectory,
+        host: options.host,
         onStatus: (message) => process.stdout.write(`${message}\n`),
       });
       process.stdout.write("Done.\n");
@@ -419,6 +425,11 @@ program
   .option("--knowledge-database <path>", "SQLite knowledge-base path", "data/knowledge.sqlite")
   .option("--artifacts <path>", "artifact directory", "artifacts")
   .option("--port <port>", "port to listen on (default: pick any free port)", parsePositiveInteger)
+  .option(
+    "--host <address>",
+    "bind address for the dashboard; only change this on a trusted network (no authentication)",
+    "127.0.0.1",
+  )
   .action(async (options) => {
     await requireValidLicense();
     const dashboard = await startDashboardServer({
@@ -427,6 +438,7 @@ program
       artifactsDirectory: resolve(options.artifacts),
       brand,
       port: options.port,
+      host: options.host,
       onStatus: (message) => process.stdout.write(`${message}\n`),
     });
 
